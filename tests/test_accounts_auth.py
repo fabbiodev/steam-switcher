@@ -92,12 +92,35 @@ class ImportExportTests(unittest.TestCase):
     def test_unencrypted_export_only_contains_account_metadata(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'account.zip'
-            with self.assertRaises(SteamError): export_account(path, record(), '', True)
             export_account(path, record(), include_secrets=False)
             imported = import_account(path)
             self.assertNotIn('mafile', imported)
             self.assertFalse(imported['session'])
             self.assertNotIn('password', imported)
+
+    def test_unencrypted_export_can_include_mafile_and_session(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'account.zip'
+            original = record()
+            export_account(path, original)
+            with pyzipper.AESZipFile(path) as archive:
+                self.assertFalse(archive.getinfo('account.json').flag_bits & 1)
+                self.assertIn(b'synthetic-recovery', archive.read('account.json'))
+            restored = import_account(path)
+            self.assertEqual(restored['mafile'], original['mafile'])
+            self.assertEqual(restored['session'], original['session'])
+            self.assertNotIn('password', restored)
+            self.assertFalse(restored['auto_restore'])
+
+    def test_archive_accepts_short_unicode_whitespace_and_long_passwords(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'account.zip'
+            original = record()
+            for password in ('x', 'я', ' ', 'x' * 40000):
+                with self.subTest(length=len(password)):
+                    export_account(path, original, password)
+                    self.assertEqual(import_account(path, password)['session'], original['session'])
+                    with self.assertRaises(SteamError): import_account(path)
 
     def test_hostile_zip_members_and_wrong_native_owner_are_rejected_without_extraction(self):
         with tempfile.TemporaryDirectory() as directory:

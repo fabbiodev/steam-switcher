@@ -200,8 +200,6 @@ class AccountVault:
 def export_account(path, record, password='', include_secrets=True):
     row = validate_record(record)
     if include_secrets:
-        if len(password) < 8:
-            raise SteamError("Для экспорта данных входа задайте пароль архива от 8 символов.")
         # Login password is deliberately excluded; tokens + maFile are portable.
         row.pop('password', None)
     else:

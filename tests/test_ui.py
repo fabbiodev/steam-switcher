@@ -2,12 +2,14 @@ import os
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 
 import unittest
+import locale
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QDialog
 
-from steam_sda.ui import MainWindow
+from steam_sda.ui import MainWindow, ExportDialog, ArchivePasswordDialog
 from test_core import MemoryStore, ONE, TWO
 
 
@@ -45,6 +47,34 @@ class UiTests(unittest.TestCase):
         self.assertTrue(self.win.switch_button.isEnabled())
         self.assertIn('Steam Guard', self.win.session_note.text())
 
+    def test_export_dialog_accepts_empty_short_and_long_passwords_with_secrets(self):
+        for password in ('', 'x', 'я', ' ', 'x' * 40000):
+            with self.subTest(length=len(password)):
+                dialog = ExportDialog(True, self.win)
+                dialog.password.setText(password)
+                dialog.confirm.setText(password)
+                self.assertEqual(dialog.password.text(), password)
+                self.assertIn('AES-256' if password else 'без шифрования', dialog.protection_note.text())
+                dialog._accept()
+                self.assertEqual(dialog.result(), QDialog.DialogCode.Accepted)
+                dialog.deleteLater()
+
+    def test_export_dialog_rejects_mismatched_passwords(self):
+        dialog = ExportDialog(True, self.win)
+        dialog.password.setText('x')
+        dialog.confirm.setText('y')
+        dialog._accept()
+        self.assertEqual(dialog.result(), QDialog.DialogCode.Rejected)
+        self.assertEqual(dialog.error.text(), 'Пароли не совпадают.')
+        dialog.deleteLater()
+
+    def test_import_dialog_preserves_passwords_beyond_default_input_limit(self):
+        dialog = ArchivePasswordDialog(self.win)
+        password = 'я' * 40000
+        dialog.setTextValue(password)
+        self.assertEqual(dialog.textValue(), password)
+        dialog.deleteLater()
+
     def test_failed_refresh_keeps_cached_level_and_old_generation_is_ignored(self):
         self.win._level_result(self.win.generation, ONE, {"level": 64, "source": "Steam Community", "updated_at": 1})
         self.win._level_result(self.win.generation, ONE, {"error": "Недоступно"})
@@ -52,6 +82,18 @@ class UiTests(unittest.TestCase):
         self.assertIn('Сохранённый', self.win.level_note.text())
         self.win._level_result(self.win.generation - 1, ONE, {"level": 999})
         self.assertEqual(self.win.level.text(), '64')
+
+    def test_level_update_date_renders_with_non_cyrillic_windows_locale(self):
+        original = locale.setlocale(locale.LC_ALL)
+        try:
+            locale.setlocale(locale.LC_ALL, 'English_United States.1252' if os.name == 'nt' else 'C')
+            stamp = datetime(2026, 1, 2, 3, 4).timestamp()
+            self.win._level_result(self.win.generation, ONE, {
+                'level': 64, 'source': 'Steam Community', 'updated_at': stamp,
+            })
+            self.assertEqual(self.win.level_note.text(), 'Steam Community · обновлено 02.01 в 03:04')
+        finally:
+            locale.setlocale(locale.LC_ALL, original)
 
     def test_switch_button_dispatches_selected_account(self):
         self.win.list.setCurrentRow(1)

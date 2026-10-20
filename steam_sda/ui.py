@@ -129,6 +129,18 @@ class LoginDialog(QDialog):
         box.addLayout(actions)
 
 
+class ArchivePasswordDialog(QInputDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle('Пароль архива')
+        self.setLabelText('Оставьте пустым для архива без пароля:')
+        self.setInputMode(QInputDialog.InputMode.TextInput)
+        self.setTextEchoMode(QLineEdit.EchoMode.Password)
+        self.findChild(QLineEdit).setMaxLength(2**31 - 1)
+        self.setOkButtonText('Импорт')
+        self.setCancelButtonText('Отмена')
+
+
 class ExportDialog(QDialog):
     def __init__(self, has_secrets, parent):
         super().__init__(parent)
@@ -144,12 +156,19 @@ class ExportDialog(QDialog):
         box.addWidget(label('Пароль Steam в архив не включается. Архив с maFile и токенами позволяет войти в аккаунт.', 'muted'))
         self.password = QLineEdit()
         self.password.setEchoMode(QLineEdit.EchoMode.Password)
-        self.password.setPlaceholderText('Пароль архива · от 8 символов для данных входа')
+        self.password.setMaxLength(2**31 - 1)
+        self.password.setPlaceholderText('Необязательно · оставьте пустым для ZIP без пароля')
         box.addWidget(self.password)
         self.confirm = QLineEdit()
         self.confirm.setEchoMode(QLineEdit.EchoMode.Password)
+        self.confirm.setMaxLength(2**31 - 1)
         self.confirm.setPlaceholderText('Повторите пароль архива')
         box.addWidget(self.confirm)
+        self.protection_note = label('', 'muted')
+        box.addWidget(self.protection_note)
+        self.password.textChanged.connect(self._update_protection)
+        self.secrets.toggled.connect(self._update_protection)
+        self._update_protection()
         self.error = label('', 'status')
         box.addWidget(self.error)
         actions = QHBoxLayout()
@@ -161,10 +180,17 @@ class ExportDialog(QDialog):
     def _accept(self):
         if self.password.text() != self.confirm.text():
             self.error.setText('Пароли не совпадают.')
-        elif self.secrets.isChecked() and len(self.password.text()) < 8:
-            self.error.setText('Для данных входа нужен пароль архива от 8 символов.')
         else:
             self.accept()
+
+    def _update_protection(self):
+        if self.password.text():
+            text = 'Архив будет зашифрован AES-256.'
+        elif self.secrets.isChecked():
+            text = 'ZIP без шифрования: maFile и токены будут доступны тому, у кого есть архив.'
+        else:
+            text = 'ZIP без шифрования.'
+        self.protection_note.setText(text)
 
 
 class SettingsDialog(QDialog):
@@ -470,7 +496,8 @@ class MainWindow(QMainWindow):
         updated = data.get("updated_at")
         note = data.get("source", "")
         if type(updated) in (int, float) and 0 < updated < time.time() + 86400:
-            note += " · обновлено " + datetime.fromtimestamp(updated).strftime("%d.%m в %H:%M")
+            stamp = datetime.fromtimestamp(updated)
+            note += f" · обновлено {stamp:%d.%m} в {stamp:%H:%M}"
         if data.get("error"):
             note += ("\nСохранённый уровень · " if "level" in data else "") + data["error"]
         self.level_note.setText(note or "Уровень ещё не загружен")
@@ -688,7 +715,11 @@ class MainWindow(QMainWindow):
             return
         password = ''
         if Path(path).suffix.casefold() == '.zip':
-            password, accepted = QInputDialog.getText(self, 'Пароль архива', 'Оставьте пустым для архива без пароля:', QLineEdit.EchoMode.Password)
+            dialog = ArchivePasswordDialog(self)
+            accepted = dialog.exec() == QDialog.DialogCode.Accepted
+            password = dialog.textValue()
+            dialog.setTextValue('')
+            dialog.deleteLater()
             if not accepted:
                 return
         try:
