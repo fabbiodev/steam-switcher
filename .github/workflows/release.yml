@@ -2,14 +2,16 @@ name: Windows release
 
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing release tag (for example v0.6.0)
+        description: Existing release tag (for example v0.7.2)
         required: true
-        default: v0.6.0
+        default: v0.7.2
         type: string
 
 permissions:
@@ -33,22 +35,27 @@ jobs:
       tag: ${{ steps.tag.outputs.tag }}
       sha: ${{ steps.version.outputs.sha }}
     steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          persist-credentials: false
+
       - name: Validate release tag
         id: tag
         shell: pwsh
         env:
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+          VALIDATE_BRANCH: ${{ github.event_name == 'push' && github.ref_type == 'branch' }}
         run: |
+          if ($env:VALIDATE_BRANCH -eq 'true') {
+            $env:RELEASE_TAG = 'v' + (python -c 'from steam_sda import __version__; print(__version__)')
+            if ($LASTEXITCODE -ne 0) { throw 'Cannot read branch version' }
+          }
           if ($env:RELEASE_TAG -cnotmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') {
-            throw 'Expected a release tag in the form v0.6.0'
+            throw 'Expected a release tag in the form v0.7.2'
           }
           "tag=$env:RELEASE_TAG" >> $env:GITHUB_OUTPUT
-
-      - name: Check out the release tag
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          ref: ${{ steps.tag.outputs.tag }}
-          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
@@ -93,6 +100,9 @@ jobs:
       - name: Run tests with synthetic accounts
         run: python -m unittest discover -s tests -v
 
+      - name: Render interface previews with synthetic accounts
+        run: python tools/render_preview.py
+
       - name: Verify the packaged app and SteamKit helper
         shell: pwsh
         env:
@@ -118,19 +128,46 @@ jobs:
           RELEASE_TAG: ${{ steps.tag.outputs.tag }}
         run: python tools/verify_distribution.py --archive "build/release/SteamSwitcher-${env:RELEASE_TAG}-win-x64.zip"
 
+      - name: Build Windows installer and checksums
+        run: python tools/build_installer.py
+
+      - name: Verify installation, automatic path detection and uninstall
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+        run: python tools/verify_installer.py --installer "build/release/SteamSwitcher-${env:RELEASE_TAG}-Setup-x64.exe"
+
       - name: Save release files
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: windows-release
           path: |
             build/release/*.zip
+            build/release/*-Setup-x64.exe
             build/release/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 7
           compression-level: 0
 
+      - name: Save installer verification report
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: installer-verification
+          path: build/installer-check.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Save interface previews
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: interface-previews
+          path: build/previews/*.png
+          if-no-files-found: error
+          retention-days: 7
+
   publish:
     name: Publish GitHub release
+    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -159,8 +196,15 @@ jobs:
           set -euo pipefail
           notes=".github/releases/${RELEASE_TAG}.md"
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" release-files/*.zip release-files/SHA256SUMS.txt --clobber
+            gh release upload "$RELEASE_TAG" release-files/*.zip release-files/*-Setup-x64.exe release-files/SHA256SUMS.txt --clobber
           else
-            gh release create "$RELEASE_TAG" release-files/*.zip release-files/SHA256SUMS.txt \
+            gh release create "$RELEASE_TAG" release-files/*.zip release-files/*-Setup-x64.exe release-files/SHA256SUMS.txt \
               --verify-tag --title "Steam Switcher ${RELEASE_TAG}" --notes-file "$notes" --latest
           fi
+
+      - name: Verify the published updater feed and installer download
+        shell: bash
+        run: |
+          python3 -m venv "$RUNNER_TEMP/update-feed-check"
+          "$RUNNER_TEMP/update-feed-check/bin/python" -m pip install requests==2.34.2
+          "$RUNNER_TEMP/update-feed-check/bin/python" tools/verify_update_feed.py --previous 0.7.1

@@ -19,7 +19,8 @@ from .account_list import AnimatedAccountList, avatar_colors
 from PyQt6.QtGui import QShortcut, QKeySequence
 from steam_sda import __version__
 from .dialogs import LoginDialog, ArchivePasswordDialog, ExportDialog, SettingsDialog, DeleteAccountDialog
-from .workers import LevelWorker, SwitchWorker, AuthWorker
+from .workers import LevelWorker, SwitchWorker, AuthWorker, UpdateWorker
+from .update_dialog import UpdateDialog
 
 
 class MainWindow(QMainWindow):
@@ -35,6 +36,12 @@ class MainWindow(QMainWindow):
         self.native, self.switcher = services.native, services.switcher
         self.level_worker = self.switch_worker = None
         self.auth_worker = None
+        self.update_worker = None
+        self.available_update = None
+        self._update_result = {}
+        self._update_dialog_open = False
+        self._update_to_install = None
+        self._next_update_check = 0
         self.vault = services.vault
         self.devices = services.devices
         self.auth = services.auth
@@ -65,6 +72,7 @@ class MainWindow(QMainWindow):
         if start_services:
             self.timer.start()
             QTimer.singleShot(0, self.refresh_levels)
+            QTimer.singleShot(3000, self.check_updates)
 
     def _build(self):
         surface = Backdrop()
@@ -104,7 +112,8 @@ class MainWindow(QMainWindow):
         self.reload_button = button('Обновить список', self.reload_accounts, ghost=True)
         self.open_button = button('Открыть Steam', self.open_steam, ghost=True)
         self.settings_button = button('Настройки', self.edit_settings, ghost=True)
-        for control in (self.reload_button, self.open_button, self.settings_button):
+        self.updates_button = button('Обновления', self.show_updates, icon_name='refresh', ghost=True)
+        for control in (self.reload_button, self.open_button, self.settings_button, self.updates_button):
             side.addWidget(control)
         side.addWidget(label('Данные хранятся на этом ПК', 'eyebrow'))
         root.addWidget(sidebar)
@@ -259,7 +268,7 @@ class MainWindow(QMainWindow):
         extras.addWidget(self.copy_button)
         data_box.addLayout(extras)
         help_box = card('Добавление и перенос', 'folder', details_box)
-        help_box.addWidget(label('Войдите в Steam с опцией «Запомнить меня» и обновите список. '
+        help_box.addWidget(label('Войдите в Steam и обновите список. Для разового входа доступна кнопка «Сохранить сессию». '
                                 '«Импорт базы» принимает общий ZIP, архив одного аккаунта или maFile. '
                                 '«Экспорт базы» сохраняет все аккаунты, сессии и HWID одним архивом.', 'muted'))
         removal_box = card('Управление записью', 'user', details_box)
@@ -384,6 +393,7 @@ class MainWindow(QMainWindow):
             "Используется вход, который Steam сохранил на этом компьютере. Клиент будет перезапущен." if account and account.get("remembered") else
             "Steam может запросить вход и Steam Guard. Подтвердите их в окне самого Steam.")
         self.settings_button.setEnabled(not busy)
+        self.updates_button.setEnabled(not busy and self.update_worker is None)
         self.reload_button.setEnabled(not busy)
         self.open_button.setEnabled(bool(self.native) and not busy)
         self.refresh_button.setEnabled(bool(self.account_rows) and self.level_worker is None and not self._closing
@@ -547,7 +557,9 @@ class MainWindow(QMainWindow):
         self.reload_accounts(refresh_levels=False)
 
     def tick(self):
-        if self.switch_worker or self.auth_worker or not self.native or self._closing:
+        if self._start_services:
+            self.check_updates()
+        if self.switch_worker or self.auth_worker or not self.native or self._closing or self._update_dialog_open:
             return
         try:
             state = self.services.desktop.poll(self._active, self.managed)
@@ -591,6 +603,48 @@ class MainWindow(QMainWindow):
         except SteamError as exc:
             self.message(str(exc), True)
         dialog.api_key.clear()
+        dialog.deleteLater()
+
+    def check_updates(self):
+        if (self._closing or self._update_dialog_open or self.update_worker
+                or not self.services.updates or time.time() < self._next_update_check):
+            return
+        self._next_update_check = time.time() + 3600
+        self._update_result = {}
+        self.update_worker = UpdateWorker(self.services.updates, parent=self, force=False)
+        self.update_worker.result.connect(self._receive_update)
+        self.update_worker.finished.connect(self._update_checked)
+        self.updates_button.setEnabled(False)
+        self.update_worker.start()
+
+    def _receive_update(self, result):
+        self._update_result = result
+
+    def _update_checked(self):
+        worker, self.update_worker = self.update_worker, None
+        worker.deleteLater()
+        if self._closing:
+            QTimer.singleShot(0, self.close)
+            return
+        release = self._update_result.get('release')
+        if release:
+            self.available_update = release
+            self.updates_button.setText(f'Доступна {release.version}')
+            self.message(f'Доступна Steam SDA {release.version}. Откройте «Обновления», чтобы установить.')
+        self.render()
+
+    def show_updates(self):
+        if self.auth_worker or self.switch_worker or self.update_worker or self._closing or not self.services.updates:
+            return
+        self._update_dialog_open = True
+        dialog = UpdateDialog(self.services.updates, self.available_update, self)
+        accepted = dialog.exec() == QDialog.DialogCode.Accepted
+        self.available_update = dialog.release
+        self._update_dialog_open = False
+        if accepted and dialog.installer_path:
+            self._update_to_install = (dialog.release, dialog.installer_path)
+            self._closing = True
+            self.close()
         dialog.deleteLater()
 
     def open_profile(self):
@@ -731,7 +785,7 @@ class MainWindow(QMainWindow):
         self.render()
 
     def _auto_auth(self):
-        if self._start_services:
+        if self._start_services and not self._update_dialog_open and not self._closing:
             sid = next_due_auth(self.managed, self._last_auth_attempt)
             if sid:
                 self._begin_auth(sid, automatic=True)
@@ -741,6 +795,11 @@ class MainWindow(QMainWindow):
             self.message("Дождитесь завершения операции Steam, затем закройте приложение.")
             event.ignore()
             return
+        if self.update_worker:
+            self._closing = True
+            self.update_worker.requestInterruption()
+            event.ignore()
+            return
         if self.level_worker:
             self._closing = True
             self.level_worker.requestInterruption()
@@ -748,4 +807,16 @@ class MainWindow(QMainWindow):
             event.ignore()
             return
         self.timer.stop()
+        if self._update_to_install:
+            try:
+                self.services.updates.install(*self._update_to_install)
+            except SteamError as exc:
+                self._closing = False
+                self._update_to_install = None
+                if self._start_services:
+                    self.timer.start()
+                self.message(str(exc), True)
+                event.ignore()
+                return
+            self._update_to_install = None
         event.accept()

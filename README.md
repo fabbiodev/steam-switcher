@@ -5,7 +5,7 @@
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 
 Приложение Windows для просмотра уровня Steam, переключения аккаунтов и автоматического
-восстановления входа через SteamKit2 3.4.0. Текущая версия — 0.7.1.
+восстановления входа через SteamKit2 3.4.0. Текущая версия — 0.7.2.
 
 В интерфейсе приложение называется **Steam SDA**.
 
@@ -14,9 +14,16 @@
 ## Скачать
 
 Откройте [Releases](https://github.com/fabbiodev/steam-switcher/releases/latest),
-скачайте `SteamSwitcher-v0.7.1-win-x64.zip` и распакуйте всю папку. Запустите
-`SteamSDA.exe` внутри неё. Для готовой сборки Python и .NET устанавливать не нужно.
-Рядом с архивом публикуется `SHA256SUMS.txt`.
+скачайте `SteamSwitcher-v0.7.2-Setup-x64.exe` и запустите установщик.
+При обновлении он сам определяет папку зарегистрированной установки, включая
+выбранную пользователем. Для готовой сборки Python и .NET устанавливать не нужно.
+Переносимый вариант — `SteamSwitcher-v0.7.2-win-x64.zip`: распакуйте всю папку
+и запустите `SteamSDA.exe`. Контрольные суммы обоих файлов — в `SHA256SUMS.txt`.
+
+Кнопка «Обновления» в приложении проверяет новые выпуски и позволяет скачать
+и установить обновление с проверкой SHA-256. Фоновая проверка раз в сутки включена
+по умолчанию и отключается в этом окне. После установки Steam SDA открывается снова.
+Аккаунты и HWID сохраняются. Подробности — в [инструкции](docs/updates.md).
 
 На скриншоте показаны вымышленные аккаунты.
 
@@ -232,8 +239,13 @@ python main.py --check-ui ui-check.json
 python -m pip install -r requirements-build.txt
 python tools/build.py
 python -m unittest discover -s tests -v
-python tools/package_release.py --tag v0.7.1
+python tools/package_release.py --tag v0.7.2
+python tools/build_installer.py
 ```
+
+Для сборки установщика нужен Inno Setup 6 или новее. GitHub Actions также проверяет
+установку в выбранную папку, её определение при обновлении и удаление программы
+с сохранением данных аккаунтов.
 
 Модуль SteamKit публикуется вместе с .NET runtime;
 для готового EXE отдельно устанавливать .NET не требуется.
@@ -256,12 +268,12 @@ SteamSwitcher/
   licenses/              Лицензии зависимостей
 ```
 
-`_internal` больше не используется. Старую папку сборки заменяйте целиком:
+`_internal` больше не используется. При ручном обновлении ZIP старую папку сборки заменяйте целиком:
 распакуйте новый архив в отдельное место и запускайте его EXE. Данные аккаунтов
 остаются в `%APPDATA%\SteamSDA`; повторный импорт при обновлении не требуется.
 
 ```powershell
-python tools/verify_distribution.py --archive build/release/SteamSwitcher-v0.7.1-win-x64.zip
+python tools/verify_distribution.py --archive build/release/SteamSwitcher-v0.7.2-win-x64.zip
 ```
 
 Эта проверка распаковывает архив во временную папку и запускает EXE из постороннего

@@ -19,6 +19,9 @@ from steam_sda.infrastructure.ipc.device import NativeDeviceGateway
 from steam_sda.infrastructure.community.levels import fetch_level
 from steam_sda.infrastructure.resources import resource_path
 from steam_sda.infrastructure.persistence.storage import data_dir
+from steam_sda.application.updates import UpdateService
+from steam_sda.infrastructure.updates.github import GitHubUpdates
+from steam_sda import __version__
 
 
 def prepare_app_data_dir():
@@ -43,6 +46,7 @@ class AppServices:
     fetch_level: Callable[[str, str], dict] = fetch_level
     startup_error: str = ''
     enable_devices: bool = True
+    updates: UpdateService | None = None
 
     @staticmethod
     def inspect_installation(path):
@@ -78,6 +82,7 @@ def create_services(native=None, store=None, enable_devices=True, discover=True)
     preferences = PreferenceService(store)
     services = AppServices(store, vault, AuthenticationService(vault, SteamKitGateway()),
                            DesktopToken(), preferences, Preferences(), enable_devices=enable_devices)
+    services.updates = UpdateService(store, GitHubUpdates(), __version__)
     try:
         services.state = preferences.load()
         if native is None and discover:

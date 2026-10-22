@@ -51,6 +51,70 @@ class UiTests(unittest.TestCase):
         self.assertTrue(self.win.switch_button.isEnabled())
         self.assertIn('Steam Guard', self.win.session_note.text())
 
+    def test_updates_dialog_uses_injected_service_and_does_not_modify_steam(self):
+        from unittest.mock import Mock
+        from steam_sda.presentation.qt.update_dialog import UpdateDialog
+        from steam_sda.domain.updates import UpdateRelease, RELEASES_URL
+        service = Mock()
+        service.automatic.return_value = True
+        release = UpdateRelease('0.7.3', f'{RELEASES_URL}/download/v0.7.3/SteamSwitcher-v0.7.3-Setup-x64.exe', 'a' * 64, 100)
+        dialog = UpdateDialog(service, release, self.win)
+        self.assertTrue(dialog.install_button.isEnabled())
+        self.assertIn('0.7.3', dialog.status.text())
+        dialog.automatic.setChecked(False)
+        service.set_automatic.assert_called_once_with(False)
+        service.install.assert_not_called()
+        self.assertFalse(self.win._update_dialog_open)
+        dialog.deleteLater()
+
+    def test_update_handoff_is_deferred_until_window_can_close_and_failure_keeps_it_open(self):
+        from unittest.mock import Mock
+        from steam_sda.domain.errors import SteamError
+        from PyQt6.QtGui import QCloseEvent
+        service = Mock()
+        self.win.services.updates = service
+        self.win._update_to_install = ('release-fixture', 'path-fixture')
+        self.win.auth_worker = object()
+        event = QCloseEvent()
+        self.win.closeEvent(event)
+        self.assertFalse(event.isAccepted())
+        service.install.assert_not_called()
+        self.win.auth_worker = None
+        service.install.side_effect = SteamError('Synthetic update launch failure')
+        self.win.closeEvent(event)
+        self.assertFalse(event.isAccepted())
+        self.assertIsNone(self.win._update_to_install)
+        self.assertFalse(self.win._closing)
+        self.assertIn('Synthetic update launch failure', self.win.banner.text())
+
+    def test_update_dialog_finishes_background_check_and_download_before_handoff(self):
+        from unittest.mock import Mock
+        from PyQt6.QtTest import QTest
+        from steam_sda.presentation.qt.update_dialog import UpdateDialog
+        from steam_sda.domain.updates import UpdateRelease, RELEASES_URL
+        service = Mock()
+        service.automatic.return_value = True
+        release = UpdateRelease('0.7.3', f'{RELEASES_URL}/download/v0.7.3/SteamSwitcher-v0.7.3-Setup-x64.exe', 'a' * 64, 100)
+        service.check.return_value = release
+        service.download.return_value = 'synthetic-installer-path'
+        dialog = UpdateDialog(service, parent=self.win)
+        dialog.check()
+        for _ in range(200):
+            QTest.qWait(5)
+            if dialog.worker is None: break
+        self.assertIsNone(dialog.worker)
+        self.assertEqual(dialog.release, release)
+        self.assertTrue(dialog.install_button.isEnabled())
+        dialog.download()
+        for _ in range(200):
+            QTest.qWait(5)
+            if dialog.worker is None: break
+        self.assertIsNone(dialog.worker)
+        self.assertEqual(dialog.result(), QDialog.DialogCode.Accepted)
+        self.assertEqual(dialog.installer_path, 'synthetic-installer-path')
+        service.install.assert_not_called()
+        dialog.deleteLater()
+
     def test_export_dialog_accepts_empty_short_and_long_passwords_with_secrets(self):
         for password in ('', 'x', 'я', ' ', 'x' * 40000):
             with self.subTest(length=len(password)):

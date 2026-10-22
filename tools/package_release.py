@@ -12,6 +12,15 @@ from steam_sda import __version__
 from tools.distribution import validate_layout
 
 
+def write_checksums(files, output):
+    lines = []
+    for path in sorted(map(Path, files)):
+        with path.open('rb') as stream:
+            digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+        lines.append(f'{digest}  {path.name}\n')
+    Path(output).write_text(''.join(lines), encoding='ascii')
+
+
 def package(root, tag):
     root = Path(root)
     if not re.fullmatch(r'v\d+\.\d+\.\d+', tag) or tag != f'v{__version__}':
@@ -40,10 +49,8 @@ def package(root, tag):
         for name in public_docs:
             if not (source / name).exists():
                 bundle.write(root / name, Path('SteamSwitcher') / name)
-    with archive.open('rb') as stream:
-        digest = hashlib.file_digest(stream, 'sha256').hexdigest()
     checksum = output / 'SHA256SUMS.txt'
-    checksum.write_text(f'{digest}  {archive.name}\n', encoding='ascii')
+    write_checksums([archive], checksum)
     return archive, checksum
 
 

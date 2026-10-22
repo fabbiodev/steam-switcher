@@ -17,6 +17,8 @@ from test_accounts_auth import record
 from test_hwid import profile
 from steam_sda.infrastructure.persistence.vault import AccountVault
 from steam_sda.presentation.qt.dialogs import DeleteAccountDialog
+from steam_sda.presentation.qt.update_dialog import UpdateDialog
+from steam_sda.domain.updates import UpdateRelease, RELEASES_URL
 
 root = Path(__file__).resolve().parent.parent
 app = QApplication([])
@@ -41,5 +43,8 @@ win.details_tab.click();app.processEvents();win.grab().save(str(out/'details.png
 dialog = DeleteAccountDialog(win.selected, win);dialog.show();app.processEvents();dialog.grab().save(str(out/'delete.png'));dialog.close()
 win.overview_tab.click()
 win.resize(860,570);app.processEvents();win.grab().save(str(out/'minimum.png'))
+update = UpdateRelease('0.7.3', f'{RELEASES_URL}/download/v0.7.3/SteamSwitcher-v0.7.3-Setup-x64.exe', 'a' * 64, 100)
+dialog = UpdateDialog(win.services.updates, update, win)
+dialog.show();app.processEvents();dialog.grab().save(str(out/'updates.png'));dialog.close()
 win.close()
 print('Synthetic previews rendered.')

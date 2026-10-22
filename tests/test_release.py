@@ -6,7 +6,7 @@ import unittest
 import zipfile
 
 from steam_sda import __version__
-from tools.package_release import package
+from tools.package_release import package, write_checksums
 
 
 class ReleaseTests(unittest.TestCase):
@@ -71,3 +71,13 @@ class ReleaseTests(unittest.TestCase):
         with self.assertRaises(ValueError): package(self.root, 'v99.99.99')
         (self.dist / 'SteamSDA.exe').unlink()
         with self.assertRaises(ValueError): package(self.root, f'v{__version__}')
+
+    def test_checksums_cover_both_installer_and_portable_archive(self):
+        archive, checksum = package(self.root, f'v{__version__}')
+        installer = archive.parent / f'SteamSwitcher-v{__version__}-Setup-x64.exe'
+        installer.write_bytes(b'synthetic-installer')
+        write_checksums([archive, installer], checksum)
+        entries = dict(line.split('  ', 1)[::-1] for line in checksum.read_text().splitlines())
+        self.assertEqual(set(entries), {archive.name, installer.name})
+        for file in (archive, installer):
+            self.assertEqual(entries[file.name], hashlib.sha256(file.read_bytes()).hexdigest())

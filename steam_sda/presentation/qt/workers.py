@@ -3,6 +3,28 @@ from PyQt6.QtCore import QThread, pyqtSignal
 from steam_sda.domain.errors import SteamError, RateLimitError
 
 
+class UpdateWorker(QThread):
+    result = pyqtSignal(dict)
+    progress = pyqtSignal(int)
+
+    def __init__(self, service, release=None, parent=None, force=True):
+        super().__init__(parent)
+        self.service, self.release, self.force = service, release, force
+
+    def run(self):
+        try:
+            if self.release:
+                path = self.service.download(self.release, self.progress.emit, self.isInterruptionRequested)
+                self.result.emit({'release': self.release, 'path': path})
+            else:
+                release = self.service.check(force=self.force, cancelled=self.isInterruptionRequested)
+                self.result.emit({'release': release})
+        except SteamError as exc:
+            self.result.emit({'error': str(exc)})
+        except Exception:
+            self.result.emit({'error': 'Не удалось обработать обновление. Повторите попытку позже.'})
+
+
 class LevelWorker(QThread):
     result = pyqtSignal(int, str, dict)
 
