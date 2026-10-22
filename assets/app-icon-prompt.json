@@ -1,0 +1,16 @@
+{
+  "generator": "Built-in image_gen",
+  "reference": "Selected chain concept 09",
+  "prompt": "Use case: precise-object-edit / logo-brand. Edit the provided application icon, using it as the design base. The user selected this blue chain icon for Steam SDA and asks to add the Steam emblem, with a chain link physically threaded THROUGH THE OPENING of the Steam emblem's large circular ring. Preserve the existing midnight-navy rounded-square tile, transparent exterior, periwinkle-blue color, bold thick clean geometric shapes and minimalist flat graphic style. Replace the upper-right rectangular chain link with a recognizable STEAM mechanical linkage emblem: large open circular ring at upper right, a short diagonal connecting arm and smaller circular joint toward lower left. Keep one strong oblong chain link at lower left, and visibly interlock its upper end through the hole of the large Steam ring. Use clean alternating over/under occlusion gaps at the crossing so it is unmistakably threaded, not merely two symbols laid side by side. Compose as one compact balanced diagonal symbol centered in the tile. Keep the classic Steam emblem recognizable, with a clear large ring hole, while simplifying enough for a Windows app icon at 32px. Only periwinkle and dark navy, no added text, no wordmark, no small decorations, no extra links, no borders, no glossy rendering, no 3D, no bevels, no glows. Preserve actual transparent alpha outside the tile. One finished square icon, no presentation sheet.",
+  "source": "app.png",
+  "windows_icon": "app.ico",
+  "sizes": [
+    16,
+    24,
+    32,
+    48,
+    64,
+    128,
+    256
+  ]
+}

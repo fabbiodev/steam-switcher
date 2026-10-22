@@ -16,7 +16,7 @@ from .widgets import label, button, badge, icon_tile, Backdrop, AnimatedLineEdit
 from .icons import icon
 from .motion import TransitionStack
 from .account_list import AnimatedAccountList, avatar_colors
-from PyQt6.QtGui import QShortcut, QKeySequence
+from PyQt6.QtGui import QShortcut, QKeySequence, QIcon
 from steam_sda import __version__
 from .dialogs import LoginDialog, ArchivePasswordDialog, ExportDialog, SettingsDialog, DeleteAccountDialog
 from .workers import LevelWorker, SwitchWorker, AuthWorker, UpdateWorker
@@ -30,6 +30,7 @@ class MainWindow(QMainWindow):
         self.resize(1180, 840)
         self.setMinimumSize(860, 620)
         self.services = services
+        self.setWindowIcon(QIcon(services.icon_path))
         self.store = services.store
         self.api_key, self.levels, self.settings = "", {}, {}
         self.account_rows, self.selected_id = [], None
@@ -87,7 +88,10 @@ class MainWindow(QMainWindow):
         side.setContentsMargins(18, 24, 18, 18)
         side.setSpacing(12)
         brand = QHBoxLayout()
-        brand.addWidget(icon_tile('switch', size=40))
+        self.brand_icon = label()
+        self.brand_icon.setFixedSize(40, 40)
+        self.brand_icon.setPixmap(self.windowIcon().pixmap(40, 40))
+        brand.addWidget(self.brand_icon)
         brand.addWidget(label('Steam SDA', 'brand'))
         brand.addStretch()
         brand.addWidget(badge(__version__))

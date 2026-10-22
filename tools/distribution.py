@@ -13,7 +13,7 @@ def validate_layout(directory, version):
     if manifest != expected:
         raise ValueError('Distribution manifest differs from the expected layout.')
     required = [expected[key] for key in ('entrypoint', 'steamkit', 'device')]
-    required += ['runtime/base_library.zip', 'assets/style.qss', 'assets/fonts/Inter-V.ttf',
+    required += ['runtime/base_library.zip', 'assets/style.qss', 'assets/fonts/Inter-V.ttf', 'assets/app.ico', 'assets/app.png',
                  'app/steam_sda/__init__.pyc']
     required += [f'app/steam_sda/{layer}/__init__.pyc'
                  for layer in ('domain', 'application', 'infrastructure', 'presentation')]

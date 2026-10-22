@@ -27,12 +27,13 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0
 WizardStyle=modern
+SetupIconFile={#AppSource}\assets\app.ico
 LicenseFile={#AppSource}\LICENSE
 OutputDir={#ReleaseOutput}
 OutputBaseFilename=SteamSwitcher-v{#AppVersion}-Setup-x64
 Compression=lzma2/fast
 SolidCompression=yes
-UninstallDisplayIcon={app}\SteamSDA.exe
+UninstallDisplayIcon={app}\assets\app.ico
 CloseApplications=no
 RestartApplications=no
 SetupMutex=SteamSDA.Setup
@@ -48,8 +49,8 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Source: "{#AppSource}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\Steam SDA"; Filename: "{app}\SteamSDA.exe"; WorkingDir: "{app}"
-Name: "{autodesktop}\Steam SDA"; Filename: "{app}\SteamSDA.exe"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{group}\Steam SDA"; Filename: "{app}\SteamSDA.exe"; WorkingDir: "{app}"; IconFilename: "{app}\assets\app.ico"
+Name: "{autodesktop}\Steam SDA"; Filename: "{app}\SteamSDA.exe"; WorkingDir: "{app}"; IconFilename: "{app}\assets\app.ico"; Tasks: desktopicon
 
 [Registry]
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\App Paths\SteamSDA.exe"; ValueType: string; ValueName: ""; ValueData: "{app}\SteamSDA.exe"; Flags: uninsdeletekey

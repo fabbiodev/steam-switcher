@@ -16,7 +16,7 @@ class ReleaseTests(unittest.TestCase):
         self.dist = self.root / 'dist/SteamSDA'
         self.dist.mkdir(parents=True)
         (self.dist / 'SteamSDA.exe').write_bytes(b'synthetic-executable')
-        files = ['runtime/runtime.dll', 'runtime/base_library.zip', 'assets/style.qss',
+        files = ['runtime/runtime.dll', 'runtime/base_library.zip', 'assets/style.qss', 'assets/app.ico', 'assets/app.png',
                  'assets/fonts/Inter-V.ttf', 'integrations/steamkit/SteamSDA.Auth.exe',
                  'integrations/device/SteamSDADevice.dll', 'app/steam_sda/__init__.pyc']
         files += [f'app/steam_sda/{layer}/__init__.pyc' for layer in

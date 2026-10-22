@@ -47,6 +47,7 @@ class AppServices:
     startup_error: str = ''
     enable_devices: bool = True
     updates: UpdateService | None = None
+    icon_path: str = ''
 
     @staticmethod
     def inspect_installation(path):
@@ -83,6 +84,7 @@ def create_services(native=None, store=None, enable_devices=True, discover=True)
     services = AppServices(store, vault, AuthenticationService(vault, SteamKitGateway()),
                            DesktopToken(), preferences, Preferences(), enable_devices=enable_devices)
     services.updates = UpdateService(store, GitHubUpdates(), __version__)
+    services.icon_path = str(resource_path('assets/app.ico'))
     try:
         services.state = preferences.load()
         if native is None and discover:

@@ -51,9 +51,9 @@ a.binaries = [b for b in a.binaries
               if Path(b[0]).name.lower() not in {'icuuc.dll', 'icudt78.dll'}]
 pyz = PYZ(a.pure)
 exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name='SteamSDA',
-          console=False, upx=False, contents_directory='runtime')
+          console=False, upx=False, contents_directory='runtime', icon=%r)
 coll = COLLECT(exe, a.binaries, a.datas, name='SteamSDA', upx=False)
-''' % (str(root / 'main.py'), str(root), str(root / 'tools/runtime_hook.py')), encoding='utf-8')
+''' % (str(root / 'main.py'), str(root), str(root / 'tools/runtime_hook.py'), str(root / 'assets/app.ico')), encoding='utf-8')
 subprocess.run([sys.executable, '-m', 'PyInstaller', '--noconfirm',
                 '--distpath', str(root / 'dist'), '--workpath', str(build / 'work'),
                 str(spec)], cwd=root, check=True)

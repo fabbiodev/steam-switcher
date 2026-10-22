@@ -11,10 +11,11 @@ def main():
     if sys.platform == "win32":
         os.environ.setdefault("QT_QPA_PLATFORM", "windows:fontengine=directwrite")
     from PyQt6.QtWidgets import QApplication
-    from PyQt6.QtGui import QFont, QFontDatabase, QPalette, QColor
+    from PyQt6.QtGui import QFont, QFontDatabase, QPalette, QColor, QIcon
     app = QApplication(sys.argv)
     app.setApplicationName("Steam SDA")
     app.setOrganizationName("SteamSDA")
+    app.setWindowIcon(QIcon(str(resource_path('assets/app.ico'))))
     app.setStyle("Fusion")
     from .theme import COLORS
     palette = app.palette()

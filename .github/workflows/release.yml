@@ -9,9 +9,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing release tag (for example v0.7.2)
+        description: Existing release tag (for example v0.7.3)
         required: true
-        default: v0.7.2
+        default: v0.7.3
         type: string
 
 permissions:
@@ -53,7 +53,7 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'Cannot read branch version' }
           }
           if ($env:RELEASE_TAG -cnotmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') {
-            throw 'Expected a release tag in the form v0.7.2'
+            throw 'Expected a release tag in the form v0.7.3'
           }
           "tag=$env:RELEASE_TAG" >> $env:GITHUB_OUTPUT
 
@@ -207,4 +207,4 @@ jobs:
         run: |
           python3 -m venv "$RUNNER_TEMP/update-feed-check"
           "$RUNNER_TEMP/update-feed-check/bin/python" -m pip install requests==2.34.2
-          "$RUNNER_TEMP/update-feed-check/bin/python" tools/verify_update_feed.py --previous 0.7.1
+          "$RUNNER_TEMP/update-feed-check/bin/python" tools/verify_update_feed.py --previous 0.7.2

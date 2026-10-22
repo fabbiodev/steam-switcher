@@ -36,6 +36,8 @@ def check_ui(app, report_path):
                    "app_version": __version__,
                    "font": QFontInfo(app.font()).family(), "accounts": win.list.count(),
                    "current_switch_disabled": not win.switch_button.isEnabled(), "dpapi": dpapi}
+        summary['application_icon'] = not win.windowIcon().isNull() and not win.brand_icon.pixmap().isNull()
+        summary['ok'] &= summary['application_icon']
         win.list.setCurrentRow(1)
         summary["other_switch_enabled"] = win.switch_button.isEnabled()
         summary["ok"] &= summary["other_switch_enabled"] and summary["current_switch_disabled"]
