@@ -77,6 +77,38 @@ class AccountWorkflowTests(unittest.TestCase):
             self.assertEqual(restored['hwid'], original['hwid'])
             self.assertEqual(restored['mafile'], original['mafile'])
 
+    def test_delete_removes_credentials_and_does_not_rediscover_native_account(self):
+        self.vault.save({**record(), 'hwid': profile(), 'password': 'synthetic-secret'})
+        self.vault.save(record(TWO, 'second_login'))
+        self.native.account_list.return_value = [record(), record(TWO, 'second_login')]
+        self.service.delete(ONE)
+        self.assertEqual(self.vault.get(ONE), {})
+        self.assertNotIn('synthetic-secret', str(self.vault.store.values))
+        self.assertEqual([row['steam_id'] for row in self.service.catalog()[0]], [TWO])
+        self.assertEqual(AccountVault(self.vault.store).excluded(), {ONE})
+        self.assertIn(TWO, self.vault.all())
+        self.native.stop.assert_not_called()
+
+    def test_deleted_account_is_restored_only_by_explicit_import(self):
+        self.service.delete(ONE)
+        self.service.devices = Mock()
+        self.service.bind_discovered([record()])
+        self.service.devices.bind_many.assert_called_once_with([])
+        self.service.devices = None
+        self.archives.read.return_value = record()
+        self.service.import_file('account.zip')
+        self.assertIn(ONE, self.vault.all())
+        self.assertNotIn(ONE, self.vault.excluded())
+
+    def test_deletion_validates_id_and_preserves_record_when_write_fails(self):
+        from unittest.mock import patch
+        self.vault.save(record())
+        with self.assertRaises(SteamError): self.service.delete('not-a-steam-id')
+        with patch.object(self.vault.store, 'write', side_effect=SteamError('synthetic write failure')):
+            with self.assertRaises(SteamError): self.service.delete(ONE)
+        self.assertIn(ONE, self.vault.all())
+        self.assertNotIn(ONE, self.vault.excluded())
+
 
 class SessionPolicyTests(unittest.TestCase):
     def test_recovery_follows_lost_owner_and_waits_fifteen_seconds(self):

@@ -3,6 +3,7 @@ import json
 import threading
 from steam_sda.domain.accounts import validate_record, metadata
 from steam_sda.domain.errors import SteamError
+from steam_sda.domain.identity import valid_id
 
 VAULT = "accounts-vault.dpapi"
 
@@ -14,6 +15,7 @@ class AccountVault:
 
     def all(self):
         data = self.store.read(VAULT, encrypted=True)
+        data.pop('_removed', None)
         result = {}
         for sid, value in data.items():
             row = validate_record(value)
@@ -21,6 +23,21 @@ class AccountVault:
                 raise SteamError("Некорректный индекс защищённых аккаунтов.")
             result[sid] = row
         return result
+
+    def excluded(self):
+        values = self.store.read(VAULT, encrypted=True).get('_removed', [])
+        if not isinstance(values, list) or any(not valid_id(sid) for sid in values):
+            raise SteamError('Некорректный список удалённых аккаунтов.')
+        return set(values)
+
+    def delete(self, sid):
+        if not valid_id(sid):
+            raise SteamError('Некорректный SteamID.')
+        with self.lock:
+            data, removed = self.all(), self.excluded()
+            data.pop(sid, None)
+            removed.add(sid)
+            self.store.write(VAULT, {**data, '_removed': sorted(removed)}, encrypted=True)
 
     def get(self, sid):
         return self.all().get(sid, {})
@@ -41,6 +58,9 @@ class AccountVault:
         if conflict:
             raise SteamError("Такой логин уже связан с другим SteamID.")
         data[row['steam_id']] = row
+        removed = self.excluded() - {row['steam_id']}
+        if removed:
+            data['_removed'] = sorted(removed)
         if len(json.dumps(data, ensure_ascii=False).encode()) > 6 * 1024 * 1024:
             raise SteamError('Хранилище аккаунтов слишком велико. Исходные данные сохранены.')
         self.store.write(VAULT, data, encrypted=True)

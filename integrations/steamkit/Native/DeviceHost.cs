@@ -20,7 +20,7 @@ static class DeviceHost
     const int Size = 3476;
     const string ClientHash = "253e0a11a4415b38c78a42f7bdd6ecc426455f06c1ba6453a48090df3142dbbc";
     const string TierHash = "8559e6bd32eb3fddd95079633272866deb292211ec4f7e69aeb0ec48fdafef72";
-    static string Dll => Path.Combine(AppContext.BaseDirectory, "SteamSDADevice.dll");
+    static string Dll => Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "device", "SteamSDADevice.dll"));
     [UnmanagedFunctionPointer(CallingConvention.Winapi)] delegate uint Export(IntPtr data);
     static void Put(byte[] data, int offset, int size, string text, Encoding encoding)
     {

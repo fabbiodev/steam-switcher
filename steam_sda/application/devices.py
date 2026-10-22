@@ -48,6 +48,9 @@ class DeviceProfiles:
     def preflight(self):
         self.gateway.call('--check-device')
 
+    def forget(self, sid):
+        self._launches.pop(sid, None)
+
     def launch(self, account):
         profile = self.ensure(account)
         response = self.gateway.call('--launch-device', profile)

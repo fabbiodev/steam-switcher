@@ -10,6 +10,7 @@ from steam_sda import __version__
 
 
 def check_ui(app, report_path):
+    app.setProperty('animationsEnabled', False)
     import tempfile
     from steam_sda.infrastructure.persistence.storage import Store, protect
     from steam_sda.infrastructure.steam.vdf import accounts
@@ -38,6 +39,21 @@ def check_ui(app, report_path):
         win.list.setCurrentRow(1)
         summary["other_switch_enabled"] = win.switch_button.isEnabled()
         summary["ok"] &= summary["other_switch_enabled"] and summary["current_switch_disabled"]
+        win.details_tab.click()
+        summary['details_navigation'] = win.pages.currentIndex() == 1 and win.delete_button.isEnabled()
+        win.accounts.delete(win.selected_id)
+        win.reload_accounts(refresh_levels=False)
+        summary['local_account_deletion'] = win.list.count() == 1 and win.selected_id == '76561198000000001'
+        summary['ok'] &= summary['details_navigation'] and summary['local_account_deletion']
+        if getattr(sys, 'frozen', False):
+            from steam_sda.infrastructure.resources import resource_path
+            location = Path(sys.modules[MainWindow.__module__].__file__).resolve()
+            summary['external_application_code'] = location == resource_path('app/steam_sda/presentation/qt/window.pyc')
+            manifest = json.loads(resource_path('layout.json').read_text(encoding='utf-8'))
+            summary['organized_distribution'] = (manifest['version'] == __version__
+                and all(resource_path(folder).is_dir() for folder in ('app', 'runtime', 'assets', 'integrations', 'docs', 'licenses'))
+                and not resource_path('_internal').exists())
+            summary['ok'] &= summary['external_application_code'] and summary['organized_distribution']
         from steam_sda.infrastructure.resources import helper_path
         if helper_path().exists():
             import subprocess

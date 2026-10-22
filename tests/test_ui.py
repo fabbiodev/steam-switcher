@@ -177,3 +177,68 @@ class UiTests(unittest.TestCase):
             selected.assert_called_once()
             self.assertEqual(selected.call_args.args[0]['steam_id'], ONE)
         self.assertTrue(row['session']['refresh_token'])
+
+    def test_delete_requires_confirmation_and_removes_only_selected_account(self):
+        with patch('steam_sda.presentation.qt.window.DeleteAccountDialog.exec', return_value=QDialog.DialogCode.Rejected):
+            self.win.delete_selected()
+        self.assertEqual(len(self.win.account_rows), 2)
+        self.win.list.setCurrentRow(1)
+        with patch('steam_sda.presentation.qt.window.DeleteAccountDialog.exec', return_value=QDialog.DialogCode.Accepted):
+            self.win.delete_button.click()
+        self.assertEqual([r['steam_id'] for r in self.win.account_rows], [ONE])
+        self.win.reload_accounts(refresh_levels=False)
+        self.assertEqual(self.win.list.count(), 1)
+        self.assertIn(TWO, self.win.accounts.vault.excluded())
+        self.assertIn('удалён', self.win.banner.text())
+
+    def test_tabs_and_busy_state_keep_account_operations_available_and_guarded(self):
+        self.win.details_tab.click()
+        self.assertEqual(self.win.pages.currentIndex(), 1)
+        self.assertTrue(self.win.delete_button.isEnabled())
+        self.win.overview_tab.click()
+        self.assertEqual(self.win.pages.currentIndex(), 0)
+        self.win.auth_worker = object()
+        try:
+            self.win.render()
+            self.assertFalse(self.win.delete_button.isEnabled())
+            self.assertFalse(self.win.import_button.isEnabled())
+            self.assertFalse(self.win.export_button.isEnabled())
+            with patch('steam_sda.presentation.qt.window.DeleteAccountDialog') as dialog:
+                self.win.delete_selected()
+                dialog.assert_not_called()
+        finally:
+            self.win.auth_worker = None
+
+    def test_empty_search_disables_account_actions_and_activity_is_bounded(self):
+        self.win.search.setText('no_such_account')
+        self.assertEqual(self.win.list.count(), 0)
+        for action in (self.win.switch_button, self.win.delete_button, self.win.copy_button, self.win.export_button):
+            self.assertFalse(action.isEnabled())
+        for i in range(30): self.win.message(f'Synthetic event {i}')
+        self.assertEqual(self.win.activity_list.count(), 20)
+        self.assertIn('Synthetic event 29', self.win.activity_list.item(0).text())
+
+    def test_button_press_animation_does_not_delay_action_and_finishes_on_release(self):
+        from PyQt6.QtCore import Qt
+        from PyQt6.QtTest import QTest
+        self.win.show()
+        self.app.processEvents()
+        self.win.list.setCurrentRow(1)
+        with patch.object(self.win, '_begin_switch') as begin:
+            QTest.mousePress(self.win.switch_button, Qt.MouseButton.LeftButton)
+            self.win.switch_button.press_animation.setCurrentTime(90)
+            self.assertEqual(self.win.switch_button.pressDepth, 1)
+            begin.assert_not_called()
+            QTest.mouseRelease(self.win.switch_button, Qt.MouseButton.LeftButton)
+            begin.assert_called_once_with(TWO)
+            self.win.switch_button.press_animation.setCurrentTime(90)
+            self.assertEqual(self.win.switch_button.pressDepth, 0)
+
+    def test_confirmation_displays_untrusted_account_name_as_plain_text(self):
+        from steam_sda.presentation.qt.dialogs import DeleteAccountDialog
+        from PyQt6.QtWidgets import QLabel
+        from PyQt6.QtCore import Qt
+        dialog = DeleteAccountDialog({**self.win.selected, 'name': '<b>unsafe</b>'}, self.win)
+        title = next(widget for widget in dialog.findChildren(QLabel) if '<b>unsafe</b>' in widget.text())
+        self.assertEqual(title.textFormat(), Qt.TextFormat.PlainText)
+        dialog.deleteLater()

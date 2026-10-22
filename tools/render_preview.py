@@ -13,16 +13,22 @@ from steam_sda.bootstrap import create_services
 from steam_sda.presentation.qt.window import MainWindow
 from test_core import MemoryStore, ONE, TWO
 from test_ui import NativeFixture
+from test_accounts_auth import record
+from test_hwid import profile
+from steam_sda.infrastructure.persistence.vault import AccountVault
+from steam_sda.presentation.qt.dialogs import DeleteAccountDialog
 
 root = Path(__file__).resolve().parent.parent
 app = QApplication([])
 app.setStyle('Fusion')
 fid = QFontDatabase.addApplicationFont(str(root/'assets/fonts/Inter-V.ttf'))
 app.setFont(QFont(QFontDatabase.applicationFontFamilies(fid)[0], 10))
+app.setProperty('animationsEnabled', False)
 app.setStyleSheet((root/'assets/style.qss').read_text())
 store = MemoryStore()
 store.write('levels.json', {ONE: {'level':64,'source':'Steam Community','updated_at':time.time()},
                             TWO: {'level':23,'source':'Steam Web API','updated_at':time.time()}})
+AccountVault(store).save({**record(TWO, 'second_login'), 'name': 'second account', 'hwid': profile(TWO)})
 win = MainWindow(create_services(NativeFixture(), store, enable_devices=False), start_services=False)
 win.account_rows[0].update(name='nightshift',login='night_login')
 win.account_rows[1].update(name='second account',login='second_login')
@@ -31,6 +37,9 @@ win.show(); app.processEvents()
 out = root/'build/previews';out.mkdir(parents=True,exist_ok=True)
 win.grab().save(str(out/'current.png'))
 win.list.setCurrentRow(1);app.processEvents();win.grab().save(str(out/'switch.png'))
+win.details_tab.click();app.processEvents();win.grab().save(str(out/'details.png'))
+dialog = DeleteAccountDialog(win.selected, win);dialog.show();app.processEvents();dialog.grab().save(str(out/'delete.png'));dialog.close()
+win.overview_tab.click()
 win.resize(860,570);app.processEvents();win.grab().save(str(out/'minimum.png'))
 win.close()
 print('Synthetic previews rendered.')

@@ -16,6 +16,8 @@ class AccountService:
 
     def catalog(self):
         rows = self.native.account_list() if self.native else []
+        excluded = self.vault.excluded()
+        rows = [row for row in rows if row['steam_id'] not in excluded]
         managed = self.vault.all()
         native_ids = {a['steam_id'] for a in rows}
         rows.extend({**metadata(a), 'remembered': False, 'imported': True}
@@ -24,8 +26,15 @@ class AccountService:
 
     def bind_discovered(self, accounts):
         if self.devices:
-            self.devices.bind_many(accounts)
+            excluded = self.vault.excluded()
+            self.devices.bind_many([row for row in accounts if row['steam_id'] not in excluded])
         return self.vault.all()
+
+    def delete(self, sid):
+        """Forget local credentials and suppress automatic Steam rediscovery."""
+        self.vault.delete(sid)
+        if self.devices:
+            self.devices.forget(sid)
 
     def capture_selected_token(self, row):
         if token_valid(row.get('session', {}).get('refresh_token', ''), row['steam_id'], 'client', True):

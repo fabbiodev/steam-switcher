@@ -5,6 +5,31 @@ from steam_sda.domain.errors import SteamError
 from .widgets import label, button
 
 
+class DeleteAccountDialog(QDialog):
+    def __init__(self, account, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle('Удаление аккаунта')
+        self.setMinimumWidth(460)
+        box = QVBoxLayout(self)
+        box.setContentsMargins(24, 24, 24, 24)
+        box.setSpacing(16)
+        box.addWidget(label('Удалить аккаунт из базы?', 'headline'))
+        box.addWidget(label(account['name'] + '\n' + account['login'], 'nameSmall'))
+        box.addWidget(label('Будут удалены сохранённые в Steam SDA пароль, сессия, maFile и HWID. '
+                            'Аккаунт исчезнет из списка и не добавится при обновлении. '
+                            'Вернуть его можно через импорт.', 'muted'))
+        box.addWidget(label('Аккаунт Steam и исходные файлы останутся на месте. Текущий вход в Steam сохранится.', 'muted'))
+        actions = QHBoxLayout()
+        cancel = button('Отмена', self.reject)
+        cancel.setDefault(True)
+        self.confirm = button('Удалить аккаунт', self.accept)
+        self.confirm.setProperty('danger', True)
+        actions.addWidget(cancel)
+        actions.addWidget(self.confirm)
+        box.addLayout(actions)
+        cancel.setFocus()
+
+
 class LoginDialog(QDialog):
     def __init__(self, row, parent):
         super().__init__(parent)

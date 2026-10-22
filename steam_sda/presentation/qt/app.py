@@ -11,11 +11,18 @@ def main():
     if sys.platform == "win32":
         os.environ.setdefault("QT_QPA_PLATFORM", "windows:fontengine=directwrite")
     from PyQt6.QtWidgets import QApplication
-    from PyQt6.QtGui import QFont, QFontDatabase
+    from PyQt6.QtGui import QFont, QFontDatabase, QPalette, QColor
     app = QApplication(sys.argv)
     app.setApplicationName("Steam SDA")
     app.setOrganizationName("SteamSDA")
     app.setStyle("Fusion")
+    palette = app.palette()
+    for role, color in ((QPalette.ColorRole.Window, '#17263b'), (QPalette.ColorRole.WindowText, '#e4edf6'),
+                        (QPalette.ColorRole.Base, '#192d43'), (QPalette.ColorRole.Text, '#e4edf6'),
+                        (QPalette.ColorRole.Button, '#30485f'), (QPalette.ColorRole.ButtonText, '#e4edf6'),
+                        (QPalette.ColorRole.Highlight, '#427f7c'), (QPalette.ColorRole.HighlightedText, '#ffffff')):
+        palette.setColor(role, QColor(color))
+    app.setPalette(palette)
     font_id = QFontDatabase.addApplicationFont(str(resource_path("assets/fonts/Inter-V.ttf")))
     families = QFontDatabase.applicationFontFamilies(font_id) if font_id >= 0 else []
     font = QFont(families[0] if families else "Segoe UI", 10)

@@ -16,7 +16,7 @@ from steam_sda.application.devices import DeviceProfiles
 from steam_sda.domain.device import fingerprint, machine_id, validate_profile
 from steam_sda.application.switching import Switcher
 from steam_sda.application.authentication import AuthenticationService
-from steam_sda.infrastructure.resources import helper_path
+from steam_sda.infrastructure.resources import helper_path, device_path
 from test_accounts_auth import mafile, jwt, record
 from test_core import FakeNative, MemoryStore, ONE, TWO, THREE
 
@@ -229,7 +229,7 @@ class NativeProfileTests(unittest.TestCase):
 
     def test_compiled_hooks_suspended_process_and_steamkit_serializer_without_login(self):
         helper = helper_path()
-        if not helper.exists() or not (helper.parent / 'SteamSDADevice.dll').exists():
+        if not helper.exists() or not device_path().exists():
             self.skipTest('Native device helper not built')
         for patch in ({}, {'fqdn': ''}, {'pc_name': 'Лаборатория', 'disk_serial': 'я' * 250}):
             p = {**profile(), **patch}
