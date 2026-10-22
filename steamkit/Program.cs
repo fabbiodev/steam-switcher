@@ -20,6 +20,18 @@ try
     if (input is null || input.Length > 100000) throw new AuthFailure("invalid_input");
     using var document = JsonDocument.Parse(input);
     var request = document.RootElement;
+    if (args.Length == 1 && args[0] is "--capture-device" or "--check-device" or "--launch-device" or "--device-self-test" or "--device-hook-self-test")
+    {
+        var root = Path.GetFullPath(Text(request, "steam_path"));
+        object output;
+        if (args[0] == "--device-self-test") output = DeviceHost.Test(new SavedDevice(request.GetProperty("hwid")));
+        else if (args[0] == "--device-hook-self-test") output = DeviceHost.TestInstalled(root, new SavedDevice(request.GetProperty("hwid")));
+        else if (args[0] == "--capture-device") output = DeviceHost.Capture(root);
+        else if (args[0] == "--launch-device") output = DeviceHost.Launch(root, new SavedDevice(request.GetProperty("hwid")));
+        else { DeviceHost.Check(root); output = new { ok = true }; }
+        Console.WriteLine(JsonSerializer.Serialize(output));
+        return;
+    }
     var sid = Text(request, "steam_id");
     var login = Text(request, "login");
     if (!ulong.TryParse(sid, out var id) || id <= 76561197960265728UL || id > 76561202255233023UL || !Regex.IsMatch(login, "^[a-zA-Z0-9_]{1,64}$"))
@@ -29,12 +41,14 @@ try
     var secret = Text(request, "shared_secret");
     var forceNew = request.TryGetProperty("force_new", out var force) && force.ValueKind == JsonValueKind.True;
     var guardData = Text(request, "guard_data");
+    var device = request.TryGetProperty("hwid", out var profile) ? new SavedDevice(profile) : null;
+    if (profile.ValueKind == JsonValueKind.Object && Text(profile, "steam_id") != sid) throw new AuthFailure("owner_mismatch");
     object? result = null;
     if (!forceNew && Token(refresh, sid, "client", true))
     {
         try
         {
-            using var connection = new Connection();
+            using var connection = new Connection(device);
             await connection.Connect();
             await connection.LogOn(login, refresh, id);
             var updated = await connection.Client.Authentication.GenerateAccessTokenForAppAsync(new SteamID(id), refresh, allowRenewal: false).WaitAsync(TimeSpan.FromSeconds(25));
@@ -61,9 +75,9 @@ try
                     mobileAccess = response.Body.access_token;
                 }
                 if (!Token(mobileAccess, sid, "mobile", false)) throw new AuthFailure("mobile_token_rejected");
-                using var connection = new Connection();
+                using var connection = new Connection(device);
                 await connection.Connect();
-                var qr = await connection.Client.Authentication.BeginAuthSessionViaQRAsync(new AuthSessionDetails { IsPersistentSession = true, DeviceFriendlyName = "Steam SDA", PlatformType = EAuthTokenPlatformType.k_EAuthTokenPlatformType_SteamClient });
+                var qr = await DeviceAuth.QR(connection.Client, new AuthSessionDetails { IsPersistentSession = true, DeviceFriendlyName = device?.Name ?? "Steam SDA", PlatformType = EAuthTokenPlatformType.k_EAuthTokenPlatformType_SteamClient }, device);
                 var match = Regex.Match(qr.ChallengeURL, @"^https://s\.team/q/(\d{1,5})/(\d{1,20})$");
                 if (!match.Success) throw new AuthFailure("unexpected_challenge");
                 var version = ushort.Parse(match.Groups[1].Value);
@@ -94,13 +108,13 @@ try
         }
         if (result is null && password.Length > 0)
         {
-            using var connection = new Connection();
+            using var connection = new Connection(device);
             await connection.Connect();
-            var auth = await connection.Client.Authentication.BeginAuthSessionViaCredentialsAsync(new AuthSessionDetails {
+            var auth = await DeviceAuth.Credentials(connection.Client, new AuthSessionDetails {
                 Username = login, Password = password, IsPersistentSession = true,
-                GuardData = guardData, DeviceFriendlyName = "Steam SDA",
+                GuardData = guardData, DeviceFriendlyName = device?.Name ?? "Steam SDA",
                 Authenticator = new Guard(secret)
-            }).WaitAsync(TimeSpan.FromSeconds(25));
+            }, device).WaitAsync(TimeSpan.FromSeconds(25));
             var authenticated = await auth.PollingWaitForResultAsync().WaitAsync(TimeSpan.FromSeconds(35));
             if (!authenticated.AccountName.Equals(login, StringComparison.OrdinalIgnoreCase) || !Token(authenticated.RefreshToken, sid, "client", true)) throw new AuthFailure("owner_mismatch");
             await connection.LogOn(login, authenticated.RefreshToken, id);
@@ -140,14 +154,17 @@ sealed class AuthFailure(string code) : Exception { public string Code { get; } 
 
 sealed class Connection : IDisposable
 {
-    public SteamClient Client { get; } = new();
+    public SteamClient Client { get; }
+    readonly SavedDevice? device;
     readonly CallbackManager callbacks;
     readonly TaskCompletionSource connected = new(TaskCreationOptions.RunContinuationsAsynchronously);
     readonly TaskCompletionSource<SteamUser.LoggedOnCallback> loggedOn = new(TaskCreationOptions.RunContinuationsAsynchronously);
     readonly CancellationTokenSource cancel = new();
     readonly Task pump;
-    public Connection()
+    public Connection(SavedDevice? device)
     {
+        this.device = device;
+        Client = device is null ? new SteamClient() : new SteamClient(SteamConfiguration.Create(b => b.WithMachineInfoProvider(device)));
         callbacks = new(Client);
         callbacks.Subscribe<SteamClient.ConnectedCallback>(_ => connected.TrySetResult());
         callbacks.Subscribe<SteamUser.LoggedOnCallback>(x => loggedOn.TrySetResult(x));
@@ -160,7 +177,7 @@ sealed class Connection : IDisposable
     public async Task Connect() { Client.Connect(); await connected.Task.WaitAsync(TimeSpan.FromSeconds(25)); }
     public async Task LogOn(string login, string token, ulong expected)
     {
-        Client.GetHandler<SteamUser>()!.LogOn(new() { Username = login, AccessToken = token, ShouldRememberPassword = true, LoginID = (uint)RandomNumberGenerator.GetInt32(1, int.MaxValue) });
+        Client.GetHandler<SteamUser>()!.LogOn(new() { Username = login, AccessToken = token, MachineName = device?.Name, ShouldRememberPassword = true, LoginID = (uint)RandomNumberGenerator.GetInt32(1, int.MaxValue) });
         var response = await loggedOn.Task.WaitAsync(TimeSpan.FromSeconds(25));
         if (response.Result != EResult.OK)
         {

@@ -71,11 +71,22 @@ def main():
             synthetic = {'steam_id': '76561198000000001', 'name': 'UI check', 'login': 'night_login',
                          'mafile': {'account_name': 'night_login', 'shared_secret': base64.b64encode(bytes(20)).decode(),
                                     'Session': {'SteamID': '76561198000000001'}}}
+            synthetic['hwid'] = {'version': 1, 'source': 'native_collectors', 'steam_id': synthetic['steam_id'],
+                                 'captured_at': 1700000000, 'machine_guid': 'lab-guid', 'network_id': bytes(range(16)).hex(),
+                                 'disk_serial': 'LABDISK', 'pc_name': 'LAB-PC', 'fqdn': 'LAB-PC.lab.invalid'}
             archive = Path(directory) / 'synthetic-account.zip'
             export_account(archive, synthetic, 'synthetic-ui-password')
             restored = import_account(archive, 'synthetic-ui-password')
             summary['encrypted_zip'] = restored['steam_id'] == synthetic['steam_id'] and restored['mafile'] == synthetic['mafile']
             summary['ok'] &= summary['encrypted_zip']
+            summary['hwid_roundtrip'] = restored.get('hwid') == synthetic['hwid']
+            summary['ok'] &= summary['hwid_roundtrip']
+            if helper_path().exists():
+                check = run_external([str(helper_path()), '--device-self-test'],
+                                     input=json.dumps({'steam_path': 'C:/SyntheticSteam', 'hwid': synthetic['hwid']}),
+                                     timeout=60, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+                summary['hwid_module'] = json.loads(check.stdout)
+                summary['ok'] &= summary['hwid_module'].get('ok') is True
             Path(args.check_ui).write_text(json.dumps(summary), encoding="utf-8")
             win.close()
         return 0 if summary["ok"] else 1

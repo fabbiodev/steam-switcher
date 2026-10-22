@@ -1,0 +1,40 @@
+{
+  "guid": {
+    "call_rva": "0xe94c41",
+    "rva": "0x8f8b20",
+    "size": 220,
+    "sha256": "20ada8cea70d59b0ea4ccb102ca040d62d4086ef0f145eccf4ed269820b40ff2"
+  },
+  "network": {
+    "call_rva": "0xe94ccc",
+    "rva": "0xe94e50",
+    "size": 136,
+    "sha256": "60a347af08ffc7a8b3e1073d26e922095430f757882775ad4afd785042b6dde7"
+  },
+  "fallback": {
+    "call_rva": "0xe94ce4",
+    "rva": "0xe95120",
+    "size": 1590,
+    "sha256": "6f52f8fdd861ed4760e2a73d4134834a71ce4e091192ce25dd547d46064d0d98"
+  },
+  "disk": {
+    "call_rva": "0xe94d62",
+    "rva": "0xe93ad0",
+    "size": 3912,
+    "sha256": "626000bb7dfdc81e97406d5716374b5645362ed2acbcfe66c9699dc02f425edb"
+  },
+  "BGetLocalFQDN": {
+    "rva": "0xd570",
+    "size": 331,
+    "sha256": "118eab17ecd331c7fd1792495e527e23ff200c371d20714343913655148adf3b"
+  },
+  "GetLocalHostname": {
+    "rva": "0xd770",
+    "size": 53,
+    "sha256": "cce4a701e7a9e53128828c2848fce8a0c9b6ecdbc94a9671a179e27547c36195"
+  },
+  "files": {
+    "steamclient64.dll": "253e0a11a4415b38c78a42f7bdd6ecc426455f06c1ba6453a48090df3142dbbc",
+    "tier0_s64.dll": "8559e6bd32eb3fddd95079633272866deb292211ec4f7e69aeb0ec48fdafef72"
+  }
+}

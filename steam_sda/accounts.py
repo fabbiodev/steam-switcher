@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import re
 import time
+import threading
 import zipfile
 
 import pyzipper
@@ -13,6 +14,7 @@ import pyzipper
 from .errors import SteamError
 from .storage import atomic_write
 from .vdf import valid_id
+from .hwid import validate_profile
 
 VAULT = "accounts-vault.dpapi"
 LIMIT = 2 * 1024 * 1024
@@ -150,12 +152,15 @@ def validate_record(value, known=()):
     error = value.get('auth_error', '')
     if isinstance(error, str):
         row['auth_error'] = error[:500]
+    if 'hwid' in value:
+        row['hwid'] = validate_profile(value['hwid'], row['steam_id'])
     return row
 
 
 class AccountVault:
     def __init__(self, store):
         self.store = store
+        self.lock = threading.RLock()
 
     def all(self):
         data = self.store.read(VAULT, encrypted=True)
@@ -171,8 +176,17 @@ class AccountVault:
         return self.all().get(sid, {})
 
     def save(self, record):
+        with self.lock:
+            return self._save(record)
+
+    def _save(self, record):
         row = validate_record(record)
         data = self.all()
+        previous = data.get(row['steam_id'], {}).get('hwid')
+        if previous:
+            if row.get('hwid') and row['hwid'] != previous:
+                raise SteamError('У аккаунта уже сохранён HWID первой привязки. Он не был заменён.')
+            row['hwid'] = previous
         conflict = next((a for a in data.values() if a['steam_id'] != row['steam_id'] and a['login'].casefold() == row['login'].casefold()), None)
         if conflict:
             raise SteamError("Такой логин уже связан с другим SteamID.")
@@ -191,6 +205,8 @@ class AccountVault:
         if row.get('mafile'):
             merged['mafile'] = row['mafile']
         merged['session'] = old.get('session') or row.get('session', {})
+        if old.get('hwid') or row.get('hwid'):
+            merged['hwid'] = old.get('hwid') or row['hwid']
         if row.get('password') and not old.get('password'):
             merged['password'] = row['password']
         self.save(merged)

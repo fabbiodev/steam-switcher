@@ -10,6 +10,9 @@ def collect(root):
     root = Path(root)
     output = root / 'build/third-party-licenses'
     output.mkdir(parents=True, exist_ok=True)
+    minhook = root / 'native/vendor/minhook/LICENSE.txt'
+    if minhook.is_file():
+        shutil.copyfile(minhook, output / 'MinHook-LICENSE.txt')
     packages = ('PyQt6', 'PyQt6-Qt6', 'PyQt6-sip', 'requests', 'urllib3', 'idna',
                 'certifi', 'charset-normalizer', 'psutil', 'pyzipper', 'pycryptodomex',
                 'pyinstaller', 'packaging', 'cryptography', 'cffi', 'pycparser', 'pyOpenSSL')

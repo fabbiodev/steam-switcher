@@ -28,3 +28,9 @@ includes collected dependency license texts under `_internal/licenses/`.
 
 Steam and Steam Guard are trademarks of Valve Corporation. This project is not
 affiliated with Valve.
+
+# Нативный модуль устройства
+
+MinHook 1.3.4 используется для перехвата сборщиков идентификатора в процессе Steam.
+Исходники и условия BSD находятся в `native/vendor/minhook/`; копия лицензии входит
+в сборку. Ревизия исходников: `c3fcafdc10146beb5919319d0683e44e3c30d537`.

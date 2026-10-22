@@ -17,6 +17,7 @@ from .storage import Store
 from .vdf import valid_id
 from .accounts import AccountVault, claims, metadata, token_valid, import_account, export_account
 from .steamkit import SteamKitAuth, DesktopToken, AuthError
+from .hwid import DeviceProfiles, fingerprint
 
 
 def label(text="", name=""):
@@ -264,6 +265,7 @@ class MainWindow(QMainWindow):
         self.level_worker = self.switch_worker = None
         self.auth_worker = None
         self.vault = AccountVault(self.store)
+        self.devices = None
         self.auth = SteamKitAuth(self.vault)
         self.desktop_token = DesktopToken()
         self.managed = {}
@@ -296,8 +298,11 @@ class MainWindow(QMainWindow):
             key = self.store.read("api-key.dpapi", encrypted=True).get("key", "")
             self.api_key = key if isinstance(key, str) else ""
             self.native = self.native or NativeSteam(self.settings.get("steam_path"))
+            if start_services:
+                self.devices = DeviceProfiles(self.vault, self.native)
+                self.auth.devices = self.devices
             self.managed = self.vault.all()
-            self.switcher = Switcher(self.native, self.store, auth=self.auth, vault=self.vault, token_bridge=self.desktop_token)
+            self.switcher = Switcher(self.native, self.store, auth=self.auth, vault=self.vault, token_bridge=self.desktop_token, devices=self.devices)
         except SteamError as exc:
             startup_error = str(exc)
         self._build()
@@ -450,6 +455,9 @@ class MainWindow(QMainWindow):
             self.managed = self.vault.all()
             native_ids = {a['steam_id'] for a in self.account_rows}
             self.account_rows.extend({**metadata(a), 'remembered': False, 'imported': True} for a in self.managed.values() if a['steam_id'] not in native_ids)
+            if self.devices:
+                self.devices.bind_many(self.account_rows)
+                self.managed = self.vault.all()
             self._active = self.native.active_id() if self.native else None
             self._mtime = self.native.login_file.stat().st_mtime_ns if self.native and self.native.login_file.exists() else None
             self.path_label.setText("Steam · " + str(self.native.root) if self.native else "Укажите папку Steam в настройках")
@@ -502,10 +510,11 @@ class MainWindow(QMainWindow):
             note += ("\nСохранённый уровень · " if "level" in data else "") + data["error"]
         self.level_note.setText(note or "Уровень ещё не загружен")
         current = bool(account and self._active == self.selected_id)
+        reapply_hwid = bool(current and self.devices and not self.devices.is_applied(self.selected_id))
         self.current.setText("Сейчас в Steam" if current else "")
         busy = self.switch_worker is not None or self.auth_worker is not None
-        self.switch_button.setEnabled(bool(account) and not current and not busy)
-        self.switch_button.setText("SteamKit обновляет сессию…" if self.auth_worker else "Переключаю…" if busy else "Аккаунт уже открыт" if current else "Переключить Steam")
+        self.switch_button.setEnabled(bool(account) and (not current or reapply_hwid) and not busy)
+        self.switch_button.setText("SteamKit обновляет сессию…" if self.auth_worker else "Переключаю…" if busy else "Перезапустить с HWID" if reapply_hwid else "Аккаунт уже открыт" if current else "Переключить Steam")
         self.session_note.setText("Steam уже работает с этим аккаунтом." if current else
             "Используется вход, который Steam сохранил на этом компьютере. Клиент будет перезапущен." if account and account.get("remembered") else
             "Steam может запросить вход и Steam Guard. Подтвердите их в окне самого Steam.")
@@ -519,6 +528,11 @@ class MainWindow(QMainWindow):
         self.progress.setVisible(busy)
         managed = self.managed.get(self.selected_id, {})
         auth_note = 'Автовход через SteamKit: ' + ('включён' if managed.get('auto_restore') else 'выключен')
+        hwid = managed.get('hwid')
+        if hwid:
+            auth_note += '\nHWID: ' + fingerprint(hwid)[:12] + ' · первая привязка ' + datetime.fromtimestamp(hwid['captured_at']).strftime('%d.%m.%Y %H:%M')
+        else:
+            auth_note += '\nHWID: ещё не сохранён'
         if managed.get('mafile'):
             auth_note += ' · maFile добавлен'
         expiry = claims(managed.get('session', {}).get('refresh_token', '')).get('exp')
@@ -631,6 +645,8 @@ class MainWindow(QMainWindow):
             self.message("Steam подтвердил вход в выбранный аккаунт.")
         elif result["state"] == "restored":
             self.message("Прежний выбор восстановлен. Steam открывается.")
+        elif result['state'] == 'hwid_lost':
+            self.message('Steam сменил процесс после запуска. Сохранённый HWID в новом процессе не подтверждён. Верните прежний вход и повторите переключение.', True)
         else:
             self.message("Steam открыт. Если он запросил пароль или Steam Guard, завершите вход в его окне.")
 
@@ -671,8 +687,11 @@ class MainWindow(QMainWindow):
 
     def open_steam(self):
         try:
-            if self.native:
-                self.native.launch()
+            if self.native and self.selected_id:
+                if self.native.processes():
+                    self.native.launch()
+                else:
+                    self._begin_switch(self.selected_id)
         except SteamError as exc:
             self.message(str(exc), True)
 
@@ -691,7 +710,10 @@ class MainWindow(QMainWindow):
                 self._level_retry_at = 0
                 self.store.write("request-backoff.json", {"until": 0})
             self.api_key, self.native = key, dialog.native
-            self.switcher = Switcher(self.native, self.store, auth=self.auth, vault=self.vault, token_bridge=self.desktop_token)
+            if self._start_services:
+                self.devices = DeviceProfiles(self.vault, self.native)
+                self.auth.devices = self.devices
+            self.switcher = Switcher(self.native, self.store, auth=self.auth, vault=self.vault, token_bridge=self.desktop_token, devices=self.devices)
             self.message("Настройки сохранены.")
             self.reload_accounts(refresh_levels=False)
             self.refresh_levels(force=True)
@@ -725,6 +747,9 @@ class MainWindow(QMainWindow):
         try:
             row = import_account(path, password, self.account_rows)
             merged = self.vault.import_record(row)
+            if self.devices:
+                self.devices.ensure(merged)
+                merged = self.vault.get(row['steam_id'])
             if Path(path).suffix.casefold() == '.mafile':
                 merged['auto_restore'] = True
                 self._capture_selected_token(merged)
@@ -742,6 +767,9 @@ class MainWindow(QMainWindow):
             return
         try:
             row = {**self.managed.get(self.selected_id, {}), **metadata(self.selected)}
+            if self.devices:
+                self.devices.ensure(row)
+                row = self.vault.get(row['steam_id'])
             self._capture_selected_token(row)
         except SteamError as exc:
             self.message(str(exc), True)

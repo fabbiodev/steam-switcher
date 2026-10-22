@@ -269,11 +269,23 @@ class NativeSteam:
 
 
 class Switcher:
-    def __init__(self, native, store=None, timeout=60, auth=None, vault=None, token_bridge=None):
+    def __init__(self, native, store=None, timeout=60, auth=None, vault=None, token_bridge=None, devices=None):
         self.native = native
         self.store = store or Store()
         self.timeout = timeout
         self.auth, self.vault, self.token_bridge = auth, vault, token_bridge
+        self.devices = devices
+
+    def _launch(self, sid):
+        if self.devices and sid:
+            row = self.vault.get(sid)
+            if not row:
+                row = next((a for a in self.native.account_list() if a['steam_id'] == sid), None)
+            if not row:
+                raise SteamError('Не найден аккаунт для запуска с сохранённым HWID.')
+            self.devices.launch(row)
+        else:
+            self.native.launch()
 
     def journal(self):
         data = self.store.read(JOURNAL, encrypted=True)
@@ -325,7 +337,8 @@ class Switcher:
 
     def complete_if_active(self):
         data = self.journal()
-        if data and self.native.active_id() == data["target"]:
+        if (data and self.native.active_id() == data["target"]
+                and (not self.devices or self.devices.is_applied(data['target']))):
             self.store.remove_journal()
             return True
         return False
@@ -371,8 +384,6 @@ class Switcher:
             self.complete_if_active()
             if self.journal():
                 raise SteamError("Есть незавершённое переключение. Завершите вход в Steam или нажмите «Вернуть прежний вход».")
-            if self.native.active_id() == steam_id:
-                return {"state": "ready", "steam_id": steam_id}
             before_rows = self.native.account_list()
             target = next((a for a in before_rows if a["steam_id"] == steam_id), None)
             managed = self.vault.get(steam_id) if self.vault else {}
@@ -381,6 +392,16 @@ class Switcher:
             if not target:
                 raise SteamError("Аккаунт исчез из списка Steam. Обновите список.")
             previous = self.native.active_id()
+            if self.devices:
+                progress('Проверяю сохранённый HWID аккаунта…')
+                self.devices.preflight()
+                self.devices.ensure(target)
+                previous_row = next((a for a in before_rows if a['steam_id'] == previous), None)
+                if previous_row:
+                    self.devices.ensure(previous_row)
+                managed = self.vault.get(steam_id)
+            if previous == steam_id and (not self.devices or self.devices.is_applied(steam_id)):
+                return {"state": "ready", "steam_id": steam_id}
             progress("Закрываю Steam…")
             self.native.stop()
             data = None
@@ -425,13 +446,13 @@ class Switcher:
                 if authenticated or selected["remembered"]:
                     self.native.set_remember({"exists": True, "value": 1, "kind": 4})
                 self.native.set_chooser("0")
-                progress("Открываю выбранный аккаунт…")
-                self.native.launch()
+                progress("Открываю выбранный аккаунт с сохранённым HWID…" if self.devices else "Открываю выбранный аккаунт…")
+                self._launch(steam_id)
             except Exception as error:
                 try:
                     if data:
                         self._restore(data)
-                    self.native.launch()
+                    self._launch(data.get('previous') if data else previous)
                     if data:
                         self.store.remove_journal()
                 except Exception:
@@ -443,6 +464,8 @@ class Switcher:
             deadline = time.monotonic() + self.timeout
             while True:
                 if self.native.active_id() == steam_id:
+                    if self.devices and not self.devices.is_applied(steam_id):
+                        return {'state': 'hwid_lost', 'steam_id': steam_id}
                     self.store.remove_journal()
                     return {"state": "ready", "steam_id": steam_id}
                 if time.monotonic() >= deadline:
@@ -458,7 +481,7 @@ class Switcher:
             self.native.stop()
             try:
                 self._restore(data, use_previous_session=True)
-                self.native.launch()
+                self._launch(data.get('previous'))
                 self.store.remove_journal()
             except SteamError:
                 raise

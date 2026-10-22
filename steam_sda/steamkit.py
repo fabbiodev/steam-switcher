@@ -43,13 +43,17 @@ def helper_path():
 
 
 class SteamKitAuth:
-    def __init__(self, vault, runner=run_external):
+    def __init__(self, vault, runner=run_external, devices=None):
         self.vault, self.runner = vault, runner
+        self.devices = devices
 
     def authenticate(self, sid, force=False, password_override=None):
         row = self.vault.get(sid)
         if not row:
             raise SteamError('Сначала импортируйте maFile или настройте вход аккаунта.')
+        if self.devices:
+            self.devices.ensure(row)
+            row = self.vault.get(sid)
         session = row.get('session', {})
         mafile = row.get('mafile', {})
         mobile = mafile.get('Session') or {}
@@ -62,6 +66,8 @@ class SteamKitAuth:
                    'shared_secret': mafile.get('shared_secret', ''), 'guard_data': session.get('guard_data', ''),
                    'mobile_refresh_token': mobile.get('RefreshToken', ''), 'mobile_access_token': mobile.get('AccessToken', ''),
                    'force_new': bool(can_relogin and (force or type(expires) is not int or expires < time.time() + 7 * 86400))}
+        if row.get('hwid'):
+            request['hwid'] = row['hwid']
         import json
         try:
             result = self.runner([str(helper_path())], input=json.dumps(request), text=True, encoding='utf-8',
