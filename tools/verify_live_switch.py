@@ -6,9 +6,10 @@ import sys
 import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from steam_sda.errors import SteamError
-from steam_sda.steam import NativeSteam, Switcher
-from steam_sda.storage import Store
+from steam_sda.domain.errors import SteamError
+from steam_sda.infrastructure.steam.client import NativeSteam
+from steam_sda.application.switching import Switcher
+from steam_sda.infrastructure.persistence.storage import Store
 
 
 def main():

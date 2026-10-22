@@ -15,14 +15,14 @@ cmake = shutil.which('cmake')
 if cmake is None:
     candidates = list(Path(os.environ.get('ProgramFiles', 'C:/Program Files')).glob('Microsoft Visual Studio/*/*/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe'))
     cmake = str(sorted(candidates)[-1]) if candidates else 'cmake'
-subprocess.run([cmake, '-S', str(root / 'native'), '-B', str(build / 'native'), '-A', 'x64'], check=True)
-subprocess.run([cmake, '--build', str(build / 'native'), '--config', 'Release', '--parallel'], check=True)
-subprocess.run(['dotnet', 'publish', str(root / 'steamkit/SteamSDA.Auth.csproj'),
+subprocess.run([cmake, '-S', str(root / 'integrations/device'), '-B', str(build / 'device'), '-A', 'x64'], check=True)
+subprocess.run([cmake, '--build', str(build / 'device'), '--config', 'Release', '--parallel'], check=True)
+subprocess.run(['dotnet', 'publish', str(root / 'integrations/steamkit/SteamSDA.Auth.csproj'),
                 '-c', 'Release', '-r', 'win-x64', '--self-contained', 'true',
                 '-o', str(build / 'steamkit'), '--nologo'], cwd=root, env=env, check=True)
 subprocess.run([str(build / 'steamkit/SteamSDA.Auth.exe'), '--self-test'], check=True)
-shutil.copyfile(build / 'native/Release/SteamSDADevice.dll', build / 'steamkit/SteamSDADevice.dll')
-shutil.copyfile(build / 'native/Release/SteamSDA.DeviceFixture.exe', build / 'steamkit/SteamSDA.DeviceFixture.exe')
+shutil.copyfile(build / 'device/Release/SteamSDADevice.dll', build / 'steamkit/SteamSDADevice.dll')
+shutil.copyfile(build / 'device/Release/SteamSDA.DeviceFixture.exe', build / 'steamkit/SteamSDA.DeviceFixture.exe')
 fixture = {'steam_path': 'C:/SyntheticSteam', 'hwid': {
     'version': 1, 'machine_guid': 'lab-guid', 'network_id': bytes(range(16)).hex(),
     'disk_serial': 'LABDISK', 'pc_name': 'LAB-PC', 'fqdn': 'LAB-PC.lab.invalid'}}

@@ -9,7 +9,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'tests'))
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QFont, QFontDatabase
-from steam_sda.ui import MainWindow
+from steam_sda.bootstrap import create_services
+from steam_sda.presentation.qt.window import MainWindow
 from test_core import MemoryStore, ONE, TWO
 from test_ui import NativeFixture
 
@@ -22,7 +23,7 @@ app.setStyleSheet((root/'assets/style.qss').read_text())
 store = MemoryStore()
 store.write('levels.json', {ONE: {'level':64,'source':'Steam Community','updated_at':time.time()},
                             TWO: {'level':23,'source':'Steam Web API','updated_at':time.time()}})
-win = MainWindow(NativeFixture(), store, start_services=False)
+win = MainWindow(create_services(NativeFixture(), store, enable_devices=False), start_services=False)
 win.account_rows[0].update(name='nightshift',login='night_login')
 win.account_rows[1].update(name='second account',login='second_login')
 win._list()

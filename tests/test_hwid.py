@@ -1,3 +1,5 @@
+from steam_sda.infrastructure.ipc.steamkit import SteamKitGateway
+from steam_sda.infrastructure.ipc.device import NativeDeviceGateway
 import copy
 import json
 from pathlib import Path
@@ -6,11 +8,15 @@ import tempfile
 import unittest
 from unittest.mock import Mock
 
-from steam_sda.accounts import AccountVault, export_account, import_account, mafile_record, validate_record
-from steam_sda.errors import SteamError
-from steam_sda.hwid import DeviceProfiles, fingerprint, machine_id, validate_profile
-from steam_sda.steam import Switcher
-from steam_sda.steamkit import SteamKitAuth, helper_path
+from steam_sda.infrastructure.persistence.vault import AccountVault
+from steam_sda.infrastructure.persistence.archives import export_account, import_account
+from steam_sda.domain.accounts import mafile_record, validate_record
+from steam_sda.domain.errors import SteamError
+from steam_sda.application.devices import DeviceProfiles
+from steam_sda.domain.device import fingerprint, machine_id, validate_profile
+from steam_sda.application.switching import Switcher
+from steam_sda.application.authentication import AuthenticationService
+from steam_sda.infrastructure.resources import helper_path
 from test_accounts_auth import mafile, jwt, record
 from test_core import FakeNative, MemoryStore, ONE, TWO, THREE
 
@@ -34,7 +40,7 @@ class ProfileStorageTests(unittest.TestCase):
 
     def test_first_machine_is_captured_once_and_mafile_cannot_replace_it(self):
         runner = Mock(return_value=capture_response(profile()))
-        devices = DeviceProfiles(self.vault, self.native, runner)
+        devices = DeviceProfiles(self.vault, NativeDeviceGateway(self.native, runner))
         imported = self.vault.import_record(mafile_record(mafile()))
         first = devices.ensure(imported)
         again = self.vault.import_record({**record(), 'hwid': profile(marker='another-computer')})
@@ -44,7 +50,7 @@ class ProfileStorageTests(unittest.TestCase):
         self.assertIn('mafile', self.vault.get(ONE))
 
     def test_native_session_only_account_is_also_bound_without_enabling_automation(self):
-        devices = DeviceProfiles(self.vault, self.native, Mock(return_value=capture_response(profile())))
+        devices = DeviceProfiles(self.vault, NativeDeviceGateway(self.native, Mock(return_value=capture_response(profile()))))
         devices.ensure({'steam_id': ONE, 'login': 'first_login', 'name': 'Native session'})
         row = self.vault.get(ONE)
         self.assertEqual(row['hwid']['steam_id'], ONE)
@@ -53,7 +59,7 @@ class ProfileStorageTests(unittest.TestCase):
 
     def test_first_discovery_scan_captures_one_snapshot_for_all_accounts(self):
         runner = Mock(return_value=capture_response(profile()))
-        devices = DeviceProfiles(self.vault, self.native, runner)
+        devices = DeviceProfiles(self.vault, NativeDeviceGateway(self.native, runner))
         rows = [record(), record(TWO, 'second_login')]
         devices.bind_many(rows)
         devices.bind_many(rows)
@@ -63,7 +69,7 @@ class ProfileStorageTests(unittest.TestCase):
 
     def test_profiles_are_isolated_by_steam_id_and_survive_stale_session_updates(self):
         runner = Mock(side_effect=[capture_response(profile()), capture_response(profile(TWO, 'second'))])
-        devices = DeviceProfiles(self.vault, self.native, runner)
+        devices = DeviceProfiles(self.vault, NativeDeviceGateway(self.native, runner))
         first, second = record(), record(TWO, 'second_login')
         self.vault.save(first)
         self.vault.save(second)
@@ -85,7 +91,7 @@ class ProfileStorageTests(unittest.TestCase):
             other = AccountVault(MemoryStore())
             other.import_record(restored)
             runner = Mock()
-            self.assertEqual(DeviceProfiles(other, self.native, runner).ensure(restored), row['hwid'])
+            self.assertEqual(DeviceProfiles(other, NativeDeviceGateway(self.native, runner)).ensure(restored), row['hwid'])
             runner.assert_not_called()
             export_account(path, record())
             self.assertNotIn('hwid', import_account(path))
@@ -101,7 +107,7 @@ class ProfileStorageTests(unittest.TestCase):
     def test_failed_capture_does_not_save_partial_profile_or_leak_helper_output(self):
         runner = Mock(return_value=subprocess.CompletedProcess([], 0, json.dumps({'ok': False, 'error': 'device_capture', 'details': 'private-id'}), ''))
         with self.assertRaises(SteamError) as caught:
-            DeviceProfiles(self.vault, self.native, runner).ensure(record())
+            DeviceProfiles(self.vault, NativeDeviceGateway(self.native, runner)).ensure(record())
         self.assertNotIn('private-id', str(caught.exception))
         self.assertFalse(self.vault.get(ONE))
 
@@ -110,7 +116,7 @@ class ProfileStorageTests(unittest.TestCase):
         self.vault.save(row)
         response = {'ok': True, 'hooks_ready': True, 'before_main': True, 'machine_id_sha256': fingerprint(row['hwid']), 'steam_pid': 123}
         runner = Mock(return_value=subprocess.CompletedProcess([], 0, json.dumps(response), ''))
-        devices = DeviceProfiles(self.vault, self.native, runner)
+        devices = DeviceProfiles(self.vault, NativeDeviceGateway(self.native, runner))
         devices.launch(row)
         args, kwargs = runner.call_args
         self.assertNotIn(row['hwid']['machine_guid'], str(args))
@@ -127,7 +133,7 @@ class ProfileStorageTests(unittest.TestCase):
         self.vault.save(row)
         response = {'ok': True, 'hooks_ready': True, 'before_main': True,
                     'machine_id_sha256': fingerprint(row['hwid']), 'steam_pid': 123}
-        devices = DeviceProfiles(self.vault, self.native, Mock(return_value=subprocess.CompletedProcess([], 0, json.dumps(response), '')))
+        devices = DeviceProfiles(self.vault, NativeDeviceGateway(self.native, Mock(return_value=subprocess.CompletedProcess([], 0, json.dumps(response), ''))))
         devices.launch(row)
         self.native.processes.return_value = [Mock(pid=123, create_time=Mock(return_value=time.time() - 1))]
         self.assertTrue(devices.is_applied(ONE))
@@ -144,7 +150,7 @@ class ProfileStorageTests(unittest.TestCase):
                 response = {'ok': True, 'steam_id': ONE, 'login': row['login'],
                             'refresh_token': jwt(refresh=True), 'access_token': jwt()}
                 runner = Mock(return_value=subprocess.CompletedProcess([], 0, json.dumps(response), ''))
-                SteamKitAuth(self.vault, runner).authenticate(ONE)
+                AuthenticationService(self.vault, SteamKitGateway(runner)).authenticate(ONE)
                 self.assertEqual(json.loads(runner.call_args.kwargs['input'])['hwid'], row['hwid'])
                 self.assertEqual(self.vault.get(ONE)['hwid'], row['hwid'])
 

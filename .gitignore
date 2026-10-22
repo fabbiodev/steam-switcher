@@ -10,5 +10,6 @@ accounts.json
 *.spec
 *.maFile
 *.mafile
-steamkit/bin/
-steamkit/obj/
+integrations/steamkit/bin/
+integrations/steamkit/obj/
+work/

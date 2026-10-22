@@ -21,7 +21,7 @@ def package(root, tag):
     output = root / 'build/release'
     output.mkdir(parents=True, exist_ok=True)
     archive = output / f'SteamSwitcher-{tag}-win-x64.zip'
-    public_docs = ('README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md')
+    public_docs = ('README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md', 'docs/architecture.md')
     for name in public_docs:
         if not (root / name).is_file():
             raise ValueError(f'Missing release documentation: {name}')

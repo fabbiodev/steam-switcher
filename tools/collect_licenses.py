@@ -10,7 +10,7 @@ def collect(root):
     root = Path(root)
     output = root / 'build/third-party-licenses'
     output.mkdir(parents=True, exist_ok=True)
-    minhook = root / 'native/vendor/minhook/LICENSE.txt'
+    minhook = root / 'integrations/device/third_party/minhook/LICENSE.txt'
     if minhook.is_file():
         shutil.copyfile(minhook, output / 'MinHook-LICENSE.txt')
     packages = ('PyQt6', 'PyQt6-Qt6', 'PyQt6-sip', 'requests', 'urllib3', 'idna',
@@ -33,7 +33,7 @@ def collect(root):
     python_license = Path(sys.base_prefix) / 'LICENSE.txt'
     if python_license.is_file():
         shutil.copyfile(python_license, output / 'Python-LICENSE.txt')
-    assets = json.loads((root / 'steamkit/obj/project.assets.json').read_text(encoding='utf-8'))
+    assets = json.loads((root / 'integrations/steamkit/obj/project.assets.json').read_text(encoding='utf-8'))
     for framework in assets.get('project', {}).get('frameworks', {}).values():
         for dependency in framework.get('downloadDependencies', []):
             name = dependency['name'].lower()

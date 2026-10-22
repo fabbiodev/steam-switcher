@@ -1,3 +1,4 @@
+from steam_sda.infrastructure.ipc.steamkit import SteamKitGateway
 import base64
 import copy
 import io
@@ -12,13 +13,17 @@ from unittest.mock import Mock
 
 import pyzipper
 
-from steam_sda.accounts import (AccountVault, VAULT, claims, export_account, import_account,
-                                json_object, mafile_record, metadata, token_valid)
-from steam_sda.errors import SteamError
-from steam_sda.steam import Switcher, JOURNAL
-from steam_sda.steamkit import SteamKitAuth, DesktopToken, AuthError, helper_path
-from steam_sda.storage import Store
-from steam_sda.vdf import accounts, authenticated_account, read_value, write_value
+from steam_sda.infrastructure.persistence.vault import AccountVault, VAULT
+from steam_sda.domain.accounts import claims, json_object, mafile_record, metadata, token_valid
+from steam_sda.infrastructure.persistence.archives import export_account, import_account
+from steam_sda.domain.errors import SteamError
+from steam_sda.application.switching import Switcher, JOURNAL
+from steam_sda.application.authentication import AuthenticationService
+from steam_sda.infrastructure.steam.token_cache import DesktopToken
+from steam_sda.domain.errors import AuthError
+from steam_sda.infrastructure.resources import helper_path
+from steam_sda.infrastructure.persistence.storage import Store
+from steam_sda.infrastructure.steam.vdf import accounts, authenticated_account, read_value, write_value
 from test_core import MemoryStore, FakeNative, ONE, TWO, THREE, RAW
 
 
@@ -164,7 +169,7 @@ class SteamKitTests(unittest.TestCase):
     def test_private_ipc_and_server_owner_check_before_token_persistence(self):
         response = {'ok': True, **metadata(record()), **record()['session'], 'guard_data': 'synthetic-guard'}
         runner = Mock(return_value=subprocess.CompletedProcess([], 0, json.dumps(response), ''))
-        auth = SteamKitAuth(self.vault, runner)
+        auth = AuthenticationService(self.vault, SteamKitGateway(runner))
         result = auth.authenticate(ONE)
         args, kwargs = runner.call_args
         self.assertEqual(len(args[0]), 1)
@@ -181,7 +186,7 @@ class SteamKitTests(unittest.TestCase):
 
     def test_bad_password_requires_input_and_never_exposes_helper_errors(self):
         runner = Mock(return_value=subprocess.CompletedProcess([], 0, '{"ok":false,"error":"steam_5"}', 'private internals'))
-        with self.assertRaises(AuthError) as caught: SteamKitAuth(self.vault, runner).authenticate(ONE)
+        with self.assertRaises(AuthError) as caught: AuthenticationService(self.vault, SteamKitGateway(runner)).authenticate(ONE)
         self.assertTrue(caught.exception.requires_input)
         self.assertNotIn('private', str(caught.exception))
         self.assertEqual(self.vault.get(ONE)['last_check'], 0)
@@ -189,7 +194,7 @@ class SteamKitTests(unittest.TestCase):
     def test_password_override_is_one_time_and_does_not_replace_saved_password(self):
         response = {'ok': True, **metadata(record()), **record()['session']}
         runner = Mock(return_value=subprocess.CompletedProcess([], 0, json.dumps(response), ''))
-        SteamKitAuth(self.vault, runner).authenticate(ONE, password_override='one-time')
+        AuthenticationService(self.vault, SteamKitGateway(runner)).authenticate(ONE, password_override='one-time')
         self.assertEqual(json.loads(runner.call_args.kwargs['input'])['password'], 'one-time')
         self.assertEqual(self.vault.get(ONE)['password'], 'synthetic-private-password')
 
@@ -199,7 +204,7 @@ class SteamKitTests(unittest.TestCase):
         self.vault.save(row)
         response = {'ok': True, **metadata(record()), **record()['session']}
         runner = Mock(return_value=subprocess.CompletedProcess([], 0, json.dumps(response), ''))
-        SteamKitAuth(self.vault, runner).authenticate(ONE)
+        AuthenticationService(self.vault, SteamKitGateway(runner)).authenticate(ONE)
         self.assertTrue(json.loads(runner.call_args.kwargs['input'])['force_new'])
 
     @unittest.skipUnless(os.name == 'nt', 'Windows helper')

@@ -20,6 +20,8 @@ class ReleaseTests(unittest.TestCase):
         (self.dist / '_internal/base_library.zip').write_bytes(b'synthetic-python-standard-library')
         for name in ('README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md'):
             (self.root / name).write_text('Synthetic public documentation', encoding='utf-8')
+        (self.root / 'docs').mkdir()
+        (self.root / 'docs/architecture.md').write_text('Synthetic architecture documentation', encoding='utf-8')
 
     def tearDown(self):
         self.temp.cleanup()
@@ -31,6 +33,7 @@ class ReleaseTests(unittest.TestCase):
             self.assertIn('SteamSwitcher/_internal/runtime.dll', bundle.namelist())
             self.assertIn('SteamSwitcher/_internal/base_library.zip', bundle.namelist())
             self.assertIn('SteamSwitcher/LICENSE', bundle.namelist())
+            self.assertIn('SteamSwitcher/docs/architecture.md', bundle.namelist())
         self.assertEqual(checksum.read_text().split()[0], hashlib.sha256(archive.read_bytes()).hexdigest())
 
     def test_private_account_files_are_never_packaged(self):

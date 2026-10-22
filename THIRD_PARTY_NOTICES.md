@@ -6,7 +6,7 @@ scripts are available at https://github.com/fabbiodev/steam-switcher.
 - **SteamKit2 3.4.0** — LGPL-2.1. Source: https://github.com/SteamRE/SteamKit.
   License: `assets/licenses/SteamKit2-LICENSE.txt` in the source tree,
   `_internal/assets/licenses/SteamKit2-LICENSE.txt` in the Windows package.
-  The C# helper source is in `steamkit/`. Build it with `dotnet publish` or
+  The C# helper source is in `integrations/steamkit/`. Build it with `dotnet publish` or
   `python tools/build.py`; the helper is a separate executable and can be replaced.
 - **PyQt6** — GPL v3. Source and license: https://www.riverbankcomputing.com/software/pyqt/.
 - **Qt** — LGPL/GPL licenses, depending on the module. Source and license:
@@ -32,5 +32,5 @@ affiliated with Valve.
 # Нативный модуль устройства
 
 MinHook 1.3.4 используется для перехвата сборщиков идентификатора в процессе Steam.
-Исходники и условия BSD находятся в `native/vendor/minhook/`; копия лицензии входит
+Исходники и условия BSD находятся в `integrations/device/third_party/minhook/`; копия лицензии входит
 в сборку. Ревизия исходников: `c3fcafdc10146beb5919319d0683e44e3c30d537`.

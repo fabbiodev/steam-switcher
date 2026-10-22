@@ -5,7 +5,7 @@
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 
 Приложение Windows для просмотра уровня Steam, переключения аккаунтов и автоматического
-восстановления входа через SteamKit2 3.4.0. Текущая версия — 0.3.0.
+восстановления входа через SteamKit2 3.4.0. Текущая версия — 0.4.0.
 
 В интерфейсе приложение называется **Steam SDA**.
 
@@ -14,7 +14,7 @@
 ## Скачать
 
 Откройте [Releases](https://github.com/fabbiodev/steam-switcher/releases/latest),
-скачайте `SteamSwitcher-v0.3.0-win-x64.zip` и распакуйте всю папку. Запустите
+скачайте `SteamSwitcher-v0.4.0-win-x64.zip` и распакуйте всю папку. Запустите
 `SteamSDA.exe` внутри неё. Для готовой сборки Python и .NET устанавливать не нужно.
 Рядом с архивом публикуется `SHA256SUMS.txt`.
 
@@ -103,7 +103,7 @@ Steam SDA впервые увидела аккаунт. Исходный maFile 
 устройства не включает.
 
 Нативный модуль привязан к проверенным SHA-256 конкретных `steamclient64.dll` и
-`tier0_s64.dll`; сведения о них находятся в `native/ABI.json`. При обновлении Steam
+`tier0_s64.dll`; сведения о них находятся в `integrations/device/ABI.json`. При обновлении Steam
 до неподдерживаемой сборки переключение останавливается до закрытия клиента.
 Сохранённый профиль не сбрасывается. Автоматические перезапуски клиента самим Steam
 и запуск через сторонний ярлык не сохраняют установленные в процессе хуки.
@@ -147,6 +147,13 @@ Steam SDA хранит свой кэш и настройки в `%APPDATA%\Steam
 Сохранённый уровень остаётся виден с пояснением ошибки. Закрытый профиль или
 изменившаяся страница не превращаются в нулевой уровень.
 
+## Архитектура
+
+Код разделён на `domain`, `application`, `infrastructure` и `presentation/qt`.
+Сценарии получают адаптеры через `bootstrap.py`; проекты .NET и C++ находятся
+в `integrations/`. Карта папок и правила зависимостей описаны в
+[docs/architecture.md](docs/architecture.md).
+
 ## Проверки
 
 ```powershell
@@ -164,7 +171,7 @@ python main.py --check-ui ui-check.json
 python -m pip install -r requirements-build.txt
 python tools/build.py
 python -m unittest discover -s tests -v
-python tools/package_release.py --tag v0.3.0
+python tools/package_release.py --tag v0.4.0
 ```
 
 Модуль SteamKit публикуется вместе с .NET runtime;
@@ -191,5 +198,5 @@ Workflow [Windows release](https://github.com/fabbiodev/steam-switcher/actions/w
 - [Документация TcNo о сохранённых входах Steam](https://github.com/TCNOco/TcNo-Acc-Switcher/wiki/Platform-Steam) — описание механизма; реализация в этом проекте написана отдельно.
 - [SteamKit2: исходники и примеры авторизации](https://github.com/SteamRE/SteamKit/tree/master/Samples).
   SteamKit2 распространяется по LGPL-2.1; текст в `assets/licenses/SteamKit2-LICENSE.txt`.
-  Исходники нашего модуля авторизации находятся в `steamkit/`; сборка повторяемая через `tools/build.py`.
+  Исходники нашего модуля авторизации находятся в `integrations/steamkit/`; сборка повторяемая через `tools/build.py`.
 - Шрифт Inter распространяется по лицензии SIL OFL, копия находится в `assets/fonts/OFL.txt`.

@@ -1,3 +1,4 @@
+from steam_sda.bootstrap import create_services
 import os
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 
@@ -9,13 +10,16 @@ from unittest.mock import patch
 
 from PyQt6.QtWidgets import QApplication, QDialog
 
-from steam_sda.ui import MainWindow, ExportDialog, ArchivePasswordDialog
+from steam_sda.presentation.qt.window import MainWindow
+from steam_sda.presentation.qt.dialogs import ExportDialog, ArchivePasswordDialog
 from test_core import MemoryStore, ONE, TWO
 
 
 class NativeFixture:
     root = Path('C:/fake-steam')
     login_file = root / 'config/loginusers.vdf'
+
+    def login_revision(self): return None
 
     def account_list(self):
         return [{"steam_id": ONE, "name": "First", "login": "first_login", "remembered": True},
@@ -31,7 +35,7 @@ class UiTests(unittest.TestCase):
 
     def setUp(self):
         self.store = MemoryStore()
-        self.win = MainWindow(NativeFixture(), self.store, start_services=False)
+        self.win = MainWindow(create_services(NativeFixture(), self.store, enable_devices=False), start_services=False)
 
     def tearDown(self):
         self.win.close()
@@ -144,10 +148,10 @@ class UiTests(unittest.TestCase):
         self.win.native.active_id = Mock(return_value=None)
         self.win.native.processes = Mock(return_value=[object()])
         self.win.native.registry_value = Mock(return_value={'value': 'first_login'})
-        with patch('steam_sda.ui.time.monotonic', return_value=100):
+        with patch('steam_sda.presentation.qt.window.time.monotonic', return_value=100):
             self.win.tick()
-        self.assertEqual(self.win._recover_account, ONE)
-        with patch('steam_sda.ui.time.monotonic', return_value=116), patch.object(self.win, '_begin_switch') as begin:
+        self.assertEqual(self.win.recovery.pending_sid, ONE)
+        with patch('steam_sda.presentation.qt.window.time.monotonic', return_value=116), patch.object(self.win, '_begin_switch') as begin:
             self.win.tick()
             begin.assert_called_once_with(ONE)
 
@@ -158,18 +162,18 @@ class UiTests(unittest.TestCase):
         self.win.managed = self.win.vault.all()
         self.win.native.active_id = Mock(return_value=None)
         self.win.native.processes = Mock(return_value=[])
-        with patch('steam_sda.ui.time.monotonic', return_value=100):
+        with patch('steam_sda.presentation.qt.window.time.monotonic', return_value=100):
             self.win.tick()
-        with patch('steam_sda.ui.time.monotonic', return_value=116), patch.object(self.win, '_begin_switch') as begin:
+        with patch('steam_sda.presentation.qt.window.time.monotonic', return_value=116), patch.object(self.win, '_begin_switch') as begin:
             self.win.tick()
             begin.assert_not_called()
 
     def test_selected_native_session_can_be_exported_without_scanning_other_tokens(self):
         from test_accounts_auth import jwt
-        from steam_sda.accounts import metadata
+        from steam_sda.domain.accounts import metadata
         row = metadata(self.win.selected)
         with patch.object(self.win.desktop_token, 'selected_token', return_value=jwt(refresh=True)) as selected:
-            self.win._capture_selected_token(row)
+            self.win.accounts.capture_selected_token(row)
             selected.assert_called_once()
             self.assertEqual(selected.call_args.args[0]['steam_id'], ONE)
         self.assertTrue(row['session']['refresh_token'])

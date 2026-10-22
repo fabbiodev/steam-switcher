@@ -10,11 +10,13 @@ from unittest.mock import Mock, MagicMock, patch
 
 import requests
 
-from steam_sda.errors import SteamError
-from steam_sda.profile import fetch_level, parse_public_level
-from steam_sda.steam import Switcher, JOURNAL, identity_from_log
-from steam_sda.storage import Store
-from steam_sda.vdf import accounts, select_account, valid_id, chooser_preference
+from steam_sda.domain.errors import SteamError
+from steam_sda.infrastructure.community.levels import fetch_level, parse_public_level
+from steam_sda.application.switching import Switcher, JOURNAL
+from steam_sda.domain.identity import identity_from_log
+from steam_sda.infrastructure.persistence.storage import Store
+from steam_sda.infrastructure.steam.vdf import accounts, select_account, chooser_preference
+from steam_sda.domain.identity import valid_id
 
 ONE, TWO, THREE = "76561198000000001", "76561198000000002", "76561198000000003"
 RAW = ('''// original comment\r
@@ -50,6 +52,14 @@ class MemoryStore:
 
 
 class FakeNative:
+    from steam_sda.infrastructure.steam import vdf as codec
+
+    def write_logins(self, raw):
+        self.login_file.write_bytes(raw)
+
+    def login_revision(self):
+        return self.login_file.stat().st_mtime_ns if self.login_file.exists() else None
+
     def __init__(self, directory):
         self.root = Path(directory)
         self.login_file = self.root / "loginusers.vdf"
@@ -301,6 +311,6 @@ class StoreTests(unittest.TestCase):
             self.assertNotIn(b'private-key', (Path(directory) / 'api-key.dpapi').read_bytes())
             self.assertEqual(store.read('api-key.dpapi', encrypted=True)["key"], "private-key")
             store.write('settings.json', {"value": "old"})
-            with patch('steam_sda.storage.os.replace', side_effect=OSError('disk full')):
+            with patch('steam_sda.infrastructure.persistence.storage.os.replace', side_effect=OSError('disk full')):
                 with self.assertRaises(SteamError): store.write('settings.json', {"value": "new"})
             self.assertEqual(store.read('settings.json')["value"], "old")
