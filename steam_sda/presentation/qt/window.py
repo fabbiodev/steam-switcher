@@ -6,7 +6,7 @@ import webbrowser
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import (QApplication, QDialog, QVBoxLayout, QHBoxLayout, QMainWindow,
     QWidget, QFrame, QListWidget, QListWidgetItem, QLineEdit, QProgressBar, QScrollArea,
-    QLayout, QFileDialog, QButtonGroup)
+    QLayout, QFileDialog, QButtonGroup, QSizePolicy)
 from steam_sda.domain.errors import SteamError
 from steam_sda.domain.accounts import claims, metadata
 from steam_sda.domain.identity import valid_id
@@ -15,7 +15,7 @@ from steam_sda.application.sessions import next_due_auth
 from .widgets import label, button, badge, icon_tile, Backdrop
 from .icons import icon
 from .motion import TransitionStack
-from .account_list import AccountDelegate, avatar_colors
+from .account_list import AnimatedAccountList, avatar_colors
 from PyQt6.QtGui import QShortcut, QKeySequence
 from steam_sda import __version__
 from .dialogs import LoginDialog, ArchivePasswordDialog, ExportDialog, SettingsDialog, DeleteAccountDialog
@@ -26,8 +26,8 @@ class MainWindow(QMainWindow):
     def __init__(self, services, start_services=True):
         super().__init__()
         self.setWindowTitle("Steam SDA")
-        self.resize(1120, 840)
-        self.setMinimumSize(860, 570)
+        self.resize(1180, 840)
+        self.setMinimumSize(860, 620)
         self.services = services
         self.store = services.store
         self.api_key, self.levels, self.settings = "", {}, {}
@@ -74,61 +74,69 @@ class MainWindow(QMainWindow):
         root.setSpacing(0)
         sidebar = QFrame()
         sidebar.setObjectName('sidebar')
-        sidebar.setFixedWidth(256)
+        sidebar.setFixedWidth(282)
         side = QVBoxLayout(sidebar)
-        side.setContentsMargins(16, 24, 16, 18)
+        side.setContentsMargins(18, 24, 18, 18)
         side.setSpacing(12)
         brand = QHBoxLayout()
-        brand.addWidget(icon_tile('switch', size=38))
+        brand.addWidget(icon_tile('switch', size=40))
         brand.addWidget(label('Steam SDA', 'brand'))
         brand.addStretch()
         brand.addWidget(badge(__version__))
         side.addLayout(brand)
-        side.addSpacing(14)
+        side.addWidget(label('Все ваши входы в одном месте', 'muted'))
+        side.addSpacing(18)
         self.count = label('Аккаунты', 'eyebrow')
         side.addWidget(self.count)
         self.search = QLineEdit()
-        self.search.setPlaceholderText('Поиск аккаунта · Ctrl+K')
+        self.search.setPlaceholderText('Найти аккаунт')
+        self.search.setToolTip('Поиск по имени, логину и SteamID · Ctrl+K')
         self.search.addAction(icon('search'), QLineEdit.ActionPosition.LeadingPosition)
         self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(self._list)
         side.addWidget(self.search)
-        self.list = QListWidget()
+        self.list = AnimatedAccountList()
         self.list.setObjectName('accounts')
-        self.list.setItemDelegate(AccountDelegate(self.list))
         self.list.setMouseTracking(True)
         self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.list.currentItemChanged.connect(self._select)
         side.addWidget(self.list, 1)
-        transfer = QVBoxLayout()
-        transfer.setSpacing(8)
-        self.import_button = button('Импорт базы', self.import_selected, icon_name='import')
-        self.export_button = button('Экспорт базы', self.export_selected, icon_name='export')
-        transfer.addWidget(self.import_button)
-        transfer.addWidget(self.export_button)
-        side.addLayout(transfer)
-        side.addWidget(label('maFile и ZIP · перенос аккаунтов', 'muted'))
         self.reload_button = button('Обновить список', self.reload_accounts, ghost=True)
         self.open_button = button('Открыть Steam', self.open_steam, ghost=True)
         self.settings_button = button('Настройки', self.edit_settings, ghost=True)
         for control in (self.reload_button, self.open_button, self.settings_button):
             side.addWidget(control)
+        side.addWidget(label('Данные хранятся на этом ПК', 'eyebrow'))
         root.addWidget(sidebar)
         content = QWidget()
         content.setObjectName('content')
         detail = QVBoxLayout(content)
         detail.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
-        detail.setContentsMargins(28, 26, 28, 20)
-        detail.setSpacing(18)
-        top = QHBoxLayout()
+        detail.setContentsMargins(26, 24, 26, 20)
+        detail.setSpacing(14)
+        toolbar = QHBoxLayout()
+        workspace = QVBoxLayout()
+        workspace.setSpacing(3)
+        workspace.addWidget(label('ЛИЧНОЕ ПРОСТРАНСТВО', 'eyebrow'))
+        workspace.addWidget(label('Мои аккаунты', 'workspaceTitle'))
+        toolbar.addLayout(workspace, 1)
+        self.import_button = button('Импорт базы', self.import_selected, icon_name='import', ghost=True)
+        self.export_button = button('Экспорт базы', self.export_selected, icon_name='export', ghost=True)
+        toolbar.addWidget(self.import_button)
+        toolbar.addWidget(self.export_button)
+        detail.addLayout(toolbar)
+        identity_panel = QFrame()
+        identity_panel.setObjectName('identity')
+        top = QHBoxLayout(identity_panel)
+        top.setContentsMargins(22, 18, 22, 18)
         top.setSpacing(16)
         self.avatar = label('', 'avatar')
-        self.avatar.setFixedSize(64, 64)
+        self.avatar.setFixedSize(66, 66)
         self.avatar.setAlignment(Qt.AlignmentFlag.AlignCenter)
         top.addWidget(self.avatar)
         identity = QVBoxLayout()
         identity.setSpacing(4)
-        identity.addWidget(label('АККАУНТ STEAM', 'eyebrow'))
+        identity.addWidget(label('ВЫБРАННЫЙ АККАУНТ', 'eyebrow'))
         self.name = label('Выберите аккаунт', 'name')
         self.name.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         identity.addWidget(self.name)
@@ -136,13 +144,13 @@ class MainWindow(QMainWindow):
         self.login.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         identity.addWidget(self.login)
         top.addLayout(identity, 1)
-        self.current = badge('', 'success')
+        self.current = badge('')
         top.addWidget(self.current, 0, Qt.AlignmentFlag.AlignTop)
-        detail.addLayout(top)
+        detail.addWidget(identity_panel)
         nav = QHBoxLayout()
         self.tabs = QButtonGroup(self)
-        self.overview_tab = button('Обзор', lambda: self.pages.go(0), icon_name='grid', ghost=True)
-        self.details_tab = button('Данные аккаунта', lambda: self.pages.go(1), icon_name='shield', ghost=True)
+        self.overview_tab = button('Вход и обзор', lambda: self.pages.go(0), icon_name='grid', ghost=True)
+        self.details_tab = button('Сессия и данные', lambda: self.pages.go(1), icon_name='shield', ghost=True)
         for tab in (self.overview_tab, self.details_tab):
             tab.setCheckable(True)
             self.tabs.addButton(tab)
@@ -161,16 +169,19 @@ class MainWindow(QMainWindow):
         overview_box.setSpacing(16)
         self.pages.addWidget(overview)
 
-        def card(title, glyph, parent_layout):
+        def card(title, glyph, parent_layout, role=None):
             panel = QFrame()
             panel.setObjectName('panel')
+            panel.setSizePolicy(QSizePolicy.Policy.Expanding,
+                                QSizePolicy.Policy.Preferred if isinstance(parent_layout, QHBoxLayout) else QSizePolicy.Policy.Maximum)
+            if role:
+                panel.setProperty('role', role)
             box = QVBoxLayout(panel)
             box.setContentsMargins(20, 18, 20, 18)
             box.setSpacing(10)
             heading = QHBoxLayout()
             heading.addWidget(icon_tile(glyph, size=30))
-            heading.addWidget(label(title, 'headline'))
-            heading.addStretch()
+            heading.addWidget(label(title, 'headline'), 1)
             box.addLayout(heading)
             parent_layout.addWidget(panel)
             return box
@@ -184,7 +195,7 @@ class MainWindow(QMainWindow):
         level_box.addWidget(self.level_note)
         self.refresh_button = button('Обновить уровни', lambda: self.refresh_levels(force=True), ghost=True)
         level_box.addWidget(self.refresh_button)
-        device_box = card('Устройство', 'monitor', stats)
+        device_box = card('Сохранённое устройство', 'monitor', stats)
         self.hwid_value = label('Ещё не сохранено', 'deviceValue')
         device_box.addWidget(self.hwid_value)
         self.hwid_note = label('', 'muted')
@@ -196,8 +207,7 @@ class MainWindow(QMainWindow):
         flags.addWidget(self.mafile_badge)
         flags.addStretch()
         device_box.addLayout(flags)
-        overview_box.addLayout(stats)
-        session_box = card('Вход в Steam', 'key', overview_box)
+        session_box = card('Открыть аккаунт', 'key', overview_box, role='session')
         self.session_note = label('', 'muted')
         session_box.addWidget(self.session_note)
         self.switch_button = button('Переключить Steam', self.switch_selected, True)
@@ -216,13 +226,15 @@ class MainWindow(QMainWindow):
         auth_actions.addWidget(self.login_button)
         auth_actions.addWidget(self.renew_button)
         session_box.addLayout(auth_actions)
-        activity_box = card('Последние действия', 'activity', overview_box)
+        overview_box.addLayout(stats)
+        activity_box = card('История действий', 'activity', overview_box)
         self.activity_list = QListWidget()
         self.activity_list.setObjectName('activity')
-        self.activity_list.setFixedHeight(64)
+        self.activity_list.setFixedHeight(68)
         self.activity_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.activity_list.addItem('Готово к работе · выберите аккаунт слева')
+        self.activity_list.addItem('Готово · выберите аккаунт и откройте Steam')
         activity_box.addWidget(self.activity_list)
+        overview_box.addStretch()
         details = QWidget()
         details_box = QVBoxLayout(details)
         details_box.setContentsMargins(0, 0, 0, 0)
@@ -240,12 +252,14 @@ class MainWindow(QMainWindow):
         data_box.addLayout(extras)
         help_box = card('Добавление и перенос', 'folder', details_box)
         help_box.addWidget(label('Войдите в Steam с опцией «Запомнить меня» и обновите список. '
-                                'Либо импортируйте maFile или ZIP. Экспорт сохраняет выбранный аккаунт в архив.', 'muted'))
+                                '«Импорт базы» принимает общий ZIP, архив одного аккаунта или maFile. '
+                                '«Экспорт базы» сохраняет все аккаунты, сессии и HWID одним архивом.', 'muted'))
         removal_box = card('Управление записью', 'user', details_box)
         removal_box.addWidget(label('Удаление очищает данные аккаунта в Steam SDA. Повторное добавление — через импорт.', 'muted'))
         self.delete_button = button('Удалить аккаунт', self.delete_selected)
         self.delete_button.setProperty('danger', True)
         removal_box.addWidget(self.delete_button)
+        details_box.addStretch()
         detail.addStretch()
         self.path_label = label('', 'muted')
         detail.addWidget(self.path_label)
@@ -319,6 +333,7 @@ class MainWindow(QMainWindow):
         self.selected_id = selected.data(Qt.ItemDataRole.UserRole) if selected else None
         self.list.blockSignals(False)
         self.count.setText(f"Аккаунты · {len(rows)} / {len(self.account_rows)}" if query else f"Аккаунты · {len(rows)}")
+        self.list.reveal()
         self.render()
 
     def _select(self, item, previous):
@@ -329,7 +344,9 @@ class MainWindow(QMainWindow):
     def render(self):
         account = self.selected
         self.name.setText(account["name"] if account else "Нет сохранённых аккаунтов" if not self.account_rows else "Ничего не найдено")
-        self.login.setText(f"Логин: {account['login']}  ·  {account['steam_id']}" if account else "Откройте Steam и войдите в свой аккаунт.")
+        self.login.setText(f"{account['login']}  ·  {account['steam_id']}" if account else
+                           'Добавьте базу через «Импорт базы» или войдите в Steam и обновите список.' if not self.account_rows else
+                           'Попробуйте другое имя, логин или SteamID.')
         self.avatar.setText((account['name'][:2].upper() if account else '—'))
         bg, fg = avatar_colors(self.selected_id or '')
         self.avatar.setStyleSheet(f'background: {bg}; color: {fg}; border-radius: 20px; font-size: 24px; font-weight: 600;')
@@ -346,10 +363,14 @@ class MainWindow(QMainWindow):
         current = bool(account and self._active == self.selected_id)
         reapply_hwid = bool(current and self.devices and not self.devices.is_applied(self.selected_id))
         self.current.setText("● Сейчас в Steam" if current else "Не открыт")
+        self.current.setProperty('tone', 'success' if current else 'neutral')
+        self.current.style().unpolish(self.current)
+        self.current.style().polish(self.current)
         busy = self.switch_worker is not None or self.auth_worker is not None
         self.switch_button.setEnabled(bool(account) and (not current or reapply_hwid) and not busy)
         self.switch_button.setText("SteamKit обновляет сессию…" if self.auth_worker else "Переключаю…" if busy else "Перезапустить с HWID" if reapply_hwid else "Аккаунт уже открыт" if current else "Переключить Steam")
-        self.session_note.setText("Steam уже работает с этим аккаунтом." if current else
+        self.session_note.setText('Выберите аккаунт слева. Для переноса всех аккаунтов используйте кнопки вверху.' if not account else
+            "Steam уже работает с этим аккаунтом." if current else
             "Используется вход, который Steam сохранил на этом компьютере. Клиент будет перезапущен." if account and account.get("remembered") else
             "Steam может запросить вход и Steam Guard. Подтвердите их в окне самого Steam.")
         self.settings_button.setEnabled(not busy)

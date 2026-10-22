@@ -30,4 +30,13 @@ class TransitionStack(QStackedWidget):
     def go(self, index):
         if index != self.currentIndex():
             self.setCurrentIndex(index)
+            self.updateGeometry()
             self.reveal()
+
+    def sizeHint(self):
+        page = self.currentWidget()
+        return page.sizeHint() if page is not None else super().sizeHint()
+
+    def minimumSizeHint(self):
+        page = self.currentWidget()
+        return page.minimumSizeHint() if page is not None else super().minimumSizeHint()

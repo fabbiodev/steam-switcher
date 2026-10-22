@@ -273,3 +273,68 @@ class UiTests(unittest.TestCase):
         title = next(widget for widget in dialog.findChildren(QLabel) if '<b>unsafe</b>' in widget.text())
         self.assertEqual(title.textFormat(), Qt.TextFormat.PlainText)
         dialog.deleteLater()
+
+    def test_list_slide_does_not_delay_selection_and_search_restores_full_opacity(self):
+        self.app.setProperty('animationsEnabled', True)
+        try:
+            self.win.show()
+            self.app.processEvents()
+            self.win.search.setText('second_login')
+            self.assertEqual(self.win.selected_id, TWO)
+            self.assertEqual(self.win.list.count(), 1)
+            self.assertEqual(self.win.name.text(), 'Second')
+            self.win.list.reveal_animation.setCurrentTime(240)
+            self.assertEqual(self.win.list.revealProgress, 1)
+            self.win.search.clear()
+            self.assertEqual(self.win.list.count(), 2)
+            self.win.list.setCurrentRow(0)
+            self.assertEqual(self.win.selected_id, ONE)
+            self.win.list.reveal_animation.setCurrentTime(240)
+            self.assertEqual(self.win.list.revealProgress, 1)
+        finally:
+            self.app.setProperty('animationsEnabled', False)
+
+    def test_smooth_list_scroll_accumulates_input_clamps_bounds_and_stops_when_hidden(self):
+        from steam_sda.presentation.qt.account_list import AnimatedAccountList
+        listing = AnimatedAccountList()
+        listing.resize(260, 200)
+        listing.addItems([f'Account {i}' for i in range(80)])
+        self.app.setProperty('animationsEnabled', True)
+        try:
+            listing.show()
+            self.app.processEvents()
+            listing.smooth_scroll(160)
+            listing.smooth_scroll(160)
+            self.assertEqual(listing.scroll_animation.endValue(), 320)
+            listing.scroll_animation.setCurrentTime(170)
+            self.assertEqual(listing.verticalScrollBar().value(), 320)
+            listing.smooth_scroll(-10000)
+            listing.scroll_animation.setCurrentTime(170)
+            self.assertEqual(listing.verticalScrollBar().value(), 0)
+            listing.smooth_scroll(100000)
+            listing.scroll_animation.setCurrentTime(170)
+            self.assertEqual(listing.verticalScrollBar().value(), listing.verticalScrollBar().maximum())
+            from PyQt6.QtCore import Qt
+            from PyQt6.QtTest import QTest
+            listing.smooth_scroll(-160)
+            QTest.keyClick(listing, Qt.Key.Key_Home)
+            self.assertEqual(listing.currentRow(), 0)
+            self.assertEqual(listing.scroll_animation.state(), listing.scroll_animation.State.Stopped)
+            listing.reveal()
+            listing.hide()
+            self.assertEqual(listing.revealProgress, 1)
+            self.assertEqual(listing.scroll_animation.state(), listing.scroll_animation.State.Stopped)
+        finally:
+            listing.close()
+            listing.deleteLater()
+            self.app.setProperty('animationsEnabled', False)
+
+    def test_reduced_motion_disables_list_slide_and_scroll_animation(self):
+        self.app.setProperty('animationsEnabled', False)
+        self.win.show()
+        self.app.processEvents()
+        self.win.list.reveal()
+        self.assertEqual(self.win.list.revealProgress, 1)
+        self.assertEqual(self.win.list.reveal_animation.state(), self.win.list.reveal_animation.State.Stopped)
+        self.win.list.smooth_scroll(160)
+        self.assertEqual(self.win.list.scroll_animation.state(), self.win.list.scroll_animation.State.Stopped)

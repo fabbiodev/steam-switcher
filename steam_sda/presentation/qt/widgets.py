@@ -4,6 +4,7 @@ from PyQt6.QtGui import QColor, QPainter, QPen, QLinearGradient
 from PyQt6.QtWidgets import QLabel, QPushButton, QSizePolicy, QWidget
 from .icons import icon
 from .motion import enabled
+from .theme import COLORS
 
 ACTION_ICONS = {
     'Импорт': 'import', 'Экспорт': 'export', 'Обновить список': 'refresh',
@@ -94,21 +95,21 @@ class ActionButton(QPushButton):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         primary, ghost = self.objectName() == 'primary', self.property('variant') == 'ghost' or self.objectName() == 'link'
         if not self.isEnabled():
-            background, bottom, border, foreground = '#243448', '#213043', '#2c4055', '#72869b'
+            background, bottom, border, foreground = '#24212d', '#211e29', '#34303f', '#81778e'
         elif primary:
-            background = _mix('#5bd3b6', '#82e4cd', self._hover)
-            bottom, border, foreground = '#35ad96', '#61d1bb', '#092e2a'
+            background = _mix(COLORS['action'], '#ffdabd', self._hover)
+            bottom, border, foreground = '#d6a17c', '#f6cbaa', COLORS['action_text']
         elif self.isChecked():
-            background, bottom, border, foreground = '#345f65', '#294e57', '#518985', '#b4f0df'
+            background, bottom, border, foreground = '#403354', '#342b46', '#776197', '#e1d4ff'
         elif self.property('danger'):
-            background = _mix('#493344', '#624151', self._hover)
-            bottom, border, foreground = '#392b3d', '#735064', '#f3bdc7'
+            background = _mix('#432731', '#57313e', self._hover)
+            bottom, border, foreground = '#36222d', '#7c4c5d', '#f6bfca'
         else:
-            background = _mix('#344c65' if not ghost else '#24384d', '#435f79', self._hover)
-            bottom, border, foreground = '#263c52', '#425b73', '#dfebf4'
+            background = _mix('#34303f' if not ghost else '#221f2d', '#463c56', self._hover)
+            bottom, border, foreground = '#28232f', '#4c425c', COLORS['text']
         rect = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -4)
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor('#10202e'))
+        painter.setBrush(QColor('#0c0a11'))
         painter.drawRoundedRect(rect.translated(0, 3), 12, 12)
         rect.translate(0, self._press * 2.5)
         painter.setPen(QPen(QColor(border), 1))
@@ -119,7 +120,7 @@ class ActionButton(QPushButton):
         painter.drawRoundedRect(rect, 12, 12)
         if self.hasFocus():
             painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.setPen(QPen(QColor('#97e7d4'), 2))
+            painter.setPen(QPen(QColor(COLORS['accent']), 2))
             painter.drawRoundedRect(rect.adjusted(2, 2, -2, -2), 8, 8)
         content = rect.adjusted(10, 0, -10, 0)
         icon_width = 24 if self.icon_name else 0
@@ -153,7 +154,7 @@ def button(text, callback, primary=False, icon_name=None, ghost=False):
     return item
 
 
-def icon_tile(name, background='#24453f', foreground='#87d9bf', size=34):
+def icon_tile(name, background='#342b48', foreground='#c9b7ff', size=34):
     tile = QLabel()
     tile.setFixedSize(size, size)
     tile.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -174,7 +175,7 @@ class Backdrop(QWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
         gradient = QLinearGradient(0, 0, self.width(), self.height())
-        gradient.setColorAt(0, QColor('#172238'))
-        gradient.setColorAt(.52, QColor('#1b3045'))
-        gradient.setColorAt(1, QColor('#163b40'))
+        gradient.setColorAt(0, QColor('#111017'))
+        gradient.setColorAt(.55, QColor('#201a2e'))
+        gradient.setColorAt(1, QColor('#32222e'))
         painter.fillRect(self.rect(), gradient)

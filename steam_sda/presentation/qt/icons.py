@@ -38,7 +38,7 @@ GLYPHS = {
 
 
 @lru_cache(maxsize=160)
-def icon(name, color='#9eb2c8', size=20):
+def icon(name, color='#b5a8c8', size=20):
     svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" '
            f'stroke="{color}" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'
            + GLYPHS.get(name, GLYPHS['info']) + '</svg>')

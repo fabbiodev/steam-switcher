@@ -16,11 +16,12 @@ def main():
     app.setApplicationName("Steam SDA")
     app.setOrganizationName("SteamSDA")
     app.setStyle("Fusion")
+    from .theme import COLORS
     palette = app.palette()
-    for role, color in ((QPalette.ColorRole.Window, '#17263b'), (QPalette.ColorRole.WindowText, '#e4edf6'),
-                        (QPalette.ColorRole.Base, '#192d43'), (QPalette.ColorRole.Text, '#e4edf6'),
-                        (QPalette.ColorRole.Button, '#30485f'), (QPalette.ColorRole.ButtonText, '#e4edf6'),
-                        (QPalette.ColorRole.Highlight, '#427f7c'), (QPalette.ColorRole.HighlightedText, '#ffffff')):
+    for role, color in ((QPalette.ColorRole.Window, COLORS['background']), (QPalette.ColorRole.WindowText, COLORS['text']),
+                        (QPalette.ColorRole.Base, COLORS['surface']), (QPalette.ColorRole.Text, COLORS['text']),
+                        (QPalette.ColorRole.Button, COLORS['raised']), (QPalette.ColorRole.ButtonText, COLORS['text']),
+                        (QPalette.ColorRole.Highlight, COLORS['accent_deep']), (QPalette.ColorRole.HighlightedText, COLORS['text'])):
         palette.setColor(role, QColor(color))
     app.setPalette(palette)
     font_id = QFontDatabase.addApplicationFont(str(resource_path("assets/fonts/Inter-V.ttf")))
