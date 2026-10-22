@@ -23,6 +23,7 @@ QFrame#panel { background: rgba(29, 26, 38, 225); border: 1px solid #44394f; bor
 QFrame#panel[role="session"] { background: rgba(43, 33, 48, 240); border: 1px solid #70535e; border-radius: 20px; }
 QLineEdit { background: #1d1926; border: 1px solid #4b3f59; border-radius: 12px; padding: 11px 12px; selection-background-color: #6854a1; }
 QLineEdit:focus { border-color: #b7a1ff; background: #272132; }
+QLineEdit:hover { border-color: #8d75aa; }
 QLineEdit:disabled { color: #81778e; }
 QPushButton { background: #292633; border: 1px solid #4c425c; border-radius: 11px; padding: 9px 13px; }
 QPushButton:hover { background: #463c56; border-color: #a18ab8; }
@@ -33,6 +34,7 @@ QListWidget { background: transparent; border: 0; outline: 0; }
 QListWidget#activity { color: #b0a7c0; font-size: 12px; }
 QListWidget#activity::item { padding: 8px 2px; border-bottom: 1px solid #3d3349; }
 QListWidget#activity::item:selected { background: #423452; color: #f4f0fa; }
+QListWidget#activity::item:hover { background: #33293f; }
 QScrollBar:vertical { background: transparent; width: 6px; margin: 3px 0; }
 QScrollBar::handle:vertical { background: #594b69; border-radius: 3px; min-height: 28px; }
 QScrollBar::handle:vertical:hover { background: #9c83b5; }
@@ -41,7 +43,9 @@ QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: trans
 QProgressBar { border: 0; background: #45364d; height: 4px; max-height: 4px; border-radius: 2px; }
 QProgressBar::chunk { background: #f0bf95; border-radius: 2px; }
 QCheckBox { spacing: 9px; }
+QCheckBox:hover { color: #e5d5ff; }
 QCheckBox::indicator { width: 17px; height: 17px; border-radius: 5px; border: 1px solid #776389; background: #211b2d; }
 QCheckBox::indicator:checked { background: #b7a1ff; border-color: #ded1ff; }
+QCheckBox::indicator:hover { border-color: #e0caff; }
 QCheckBox::indicator:focus { border: 2px solid #e4d8ff; }
 QToolTip { background: #2d243a; color: #f4f0fa; border: 1px solid #79638e; padding: 7px; }

@@ -16,7 +16,8 @@ from steam_sda.domain.identity import identity_from_log
 from steam_sda.infrastructure.persistence.storage import atomic_write
 from steam_sda.infrastructure.ipc.processes import start_external
 from steam_sda.infrastructure.steam.vdf import accounts, chooser_preference
-from steam_sda.infrastructure.steam.vdf import read_value, write_value
+from steam_sda.infrastructure.steam.vdf import read_value, write_value, parse
+from steam_sda.domain.accounts import metadata
 from steam_sda.domain.identity import valid_id
 from steam_sda.domain.identity import STEAM_ID_BASE
 
@@ -74,7 +75,24 @@ class NativeSteam:
             raise SteamError("Не удалось прочитать аккаунты Steam. Проверьте доступ к его папке.") from None
 
     def account_list(self):
-        return accounts(self.read_logins())
+        rows = accounts(self.read_logins())
+        active = self.active_id()
+        if not active or any(row['steam_id'] == active for row in rows):
+            return rows
+        raw = self._read_config()
+        if raw is None:
+            return rows
+        _, node = parse(raw, 'InstallConfigStore')
+        for key in ('Software', 'Valve', 'Steam', 'Accounts'):
+            node = node.get(key)
+            if node is None:
+                return rows
+        candidates = [entry for entry in node.children if entry.value is None and entry.text('SteamID') == active]
+        if len(candidates) == 1:
+            login = candidates[0].key.value
+            row = metadata({'steam_id': active, 'login': login, 'name': login})
+            rows.append({**row, 'remembered': False, 'recent': True, 'last_login': 0, 'temporary_session': True})
+        return rows
 
     def processes(self):
         found = []

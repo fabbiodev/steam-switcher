@@ -8,11 +8,11 @@ from PyQt6.QtWidgets import (QApplication, QDialog, QVBoxLayout, QHBoxLayout, QM
     QWidget, QFrame, QListWidget, QListWidgetItem, QLineEdit, QProgressBar, QScrollArea,
     QLayout, QFileDialog, QButtonGroup, QSizePolicy)
 from steam_sda.domain.errors import SteamError
-from steam_sda.domain.accounts import claims, metadata
+from steam_sda.domain.accounts import claims, metadata, session_status
 from steam_sda.domain.identity import valid_id
 from steam_sda.domain.device import fingerprint
 from steam_sda.application.sessions import next_due_auth
-from .widgets import label, button, badge, icon_tile, Backdrop
+from .widgets import label, button, badge, icon_tile, Backdrop, AnimatedLineEdit
 from .icons import icon
 from .motion import TransitionStack
 from .account_list import AnimatedAccountList, avatar_colors
@@ -88,7 +88,7 @@ class MainWindow(QMainWindow):
         side.addSpacing(18)
         self.count = label('Аккаунты', 'eyebrow')
         side.addWidget(self.count)
-        self.search = QLineEdit()
+        self.search = AnimatedLineEdit()
         self.search.setPlaceholderText('Найти аккаунт')
         self.search.setToolTip('Поиск по имени, логину и SteamID · Ctrl+K')
         self.search.addAction(icon('search'), QLineEdit.ActionPosition.LeadingPosition)
@@ -208,6 +208,14 @@ class MainWindow(QMainWindow):
         flags.addStretch()
         device_box.addLayout(flags)
         session_box = card('Открыть аккаунт', 'key', overview_box, role='session')
+        session_state_row = QHBoxLayout()
+        self.session_state = badge('')
+        self.session_state.setWordWrap(True)
+        session_state_row.addWidget(self.session_state)
+        session_state_row.addStretch()
+        self.save_session_button = button('Сохранить сессию', self.save_selected_session, icon_name='lock', ghost=True)
+        session_state_row.addWidget(self.save_session_button)
+        session_box.addLayout(session_state_row)
         self.session_note = label('', 'muted')
         session_box.addWidget(self.session_note)
         self.switch_button = button('Переключить Steam', self.switch_selected, True)
@@ -317,6 +325,8 @@ class MainWindow(QMainWindow):
         self.list.clear()
         selected = None
         for account in rows:
+            state, portable, temporary = session_status(account, self.managed.get(account['steam_id'], {}), account['steam_id'] == self._active)
+            account.update(session_label=state, session_saved=portable, temporary_session=temporary)
             level = self.levels.get(account["steam_id"], {}).get("level")
             text = account["name"] + (f"  ·  {level}" if level is not None else "")
             text += "\n" + account["login"] + (" · открыт" if self._active == account["steam_id"] else "")
@@ -382,7 +392,18 @@ class MainWindow(QMainWindow):
         self.refresh_button.setText(f"Повтор через {remaining // 60}:{remaining % 60:02d}" if remaining else "Обновить уровни")
         self.progress.setVisible(busy)
         managed = self.managed.get(self.selected_id, {})
+        if account:
+            session_label, portable, temporary = session_status(account, managed, current)
+        else:
+            session_label, portable, temporary = 'Нет выбранного аккаунта', False, False
+        self.session_state.setText(session_label)
+        self.session_state.setProperty('tone', 'success' if portable else 'neutral')
+        self.session_state.style().unpolish(self.session_state)
+        self.session_state.style().polish(self.session_state)
+        self.save_session_button.setEnabled(bool(account) and not busy)
+        self.save_session_button.setToolTip('Сохранить доступную клиентскую сессию в базе, в том числе без «Запомнить меня» в Steam.')
         auth_note = 'Автовход через SteamKit: ' + ('включён' if managed.get('auto_restore') else 'выключен')
+        auth_note += '\n' + session_label
         hwid = managed.get('hwid')
         self.hwid_value.setText(fingerprint(hwid)[:12] if hwid else 'Ещё не сохранено')
         self.hwid_note.setText('Первая привязка · ' + datetime.fromtimestamp(hwid['captured_at']).strftime('%d.%m.%Y %H:%M')
@@ -490,6 +511,16 @@ class MainWindow(QMainWindow):
     def switch_selected(self):
         if self.selected_id:
             self._begin_switch(self.selected_id)
+
+    def save_selected_session(self):
+        if not self.selected or self.auth_worker or self.switch_worker:
+            return
+        try:
+            self.accounts.save_session(self.selected)
+            self.reload_accounts(refresh_levels=False)
+            self.message('Сессия сохранена в защищённой базе. Теперь она включается в экспорт всей базы.')
+        except SteamError as exc:
+            self.message(str(exc), True)
 
     def restore_previous(self):
         self._begin_switch()

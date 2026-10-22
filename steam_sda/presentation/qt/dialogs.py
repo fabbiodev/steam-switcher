@@ -2,7 +2,7 @@
 import webbrowser
 from PyQt6.QtWidgets import QDialog, QInputDialog, QVBoxLayout, QHBoxLayout, QLineEdit, QCheckBox, QFormLayout, QFileDialog
 from steam_sda.domain.errors import SteamError
-from .widgets import label, button
+from .widgets import label, button, AnimatedLineEdit
 
 
 class DeleteAccountDialog(QDialog):
@@ -40,7 +40,7 @@ class LoginDialog(QDialog):
         box.setSpacing(14)
         box.addWidget(label(row['name'], 'headline'))
         box.addWidget(label(row['login'], 'muted'))
-        self.password = QLineEdit()
+        self.password = AnimatedLineEdit()
         self.password.setEchoMode(QLineEdit.EchoMode.Password)
         self.password.setMaxLength(1024)
         self.password.setPlaceholderText('Пароль Steam — при необходимости')
@@ -88,12 +88,12 @@ class ExportDialog(QDialog):
         self.secrets.setChecked(has_secrets)
         box.addWidget(self.secrets)
         box.addWidget(label('Пароль Steam в архив не включается. Архив с maFile и токенами позволяет войти в аккаунт.', 'muted'))
-        self.password = QLineEdit()
+        self.password = AnimatedLineEdit()
         self.password.setEchoMode(QLineEdit.EchoMode.Password)
         self.password.setMaxLength(2**31 - 1)
         self.password.setPlaceholderText('Необязательно · оставьте пустым для ZIP без пароля')
         box.addWidget(self.password)
-        self.confirm = QLineEdit()
+        self.confirm = AnimatedLineEdit()
         self.confirm.setEchoMode(QLineEdit.EchoMode.Password)
         self.confirm.setMaxLength(2**31 - 1)
         self.confirm.setPlaceholderText('Повторите пароль архива')
@@ -139,12 +139,12 @@ class SettingsDialog(QDialog):
         form = QFormLayout()
         form.setVerticalSpacing(12)
         path_row = QHBoxLayout()
-        self.path = QLineEdit(steam_path)
+        self.path = AnimatedLineEdit(steam_path)
         path_row.addWidget(self.path, 1)
         browse = button("Выбрать…", self._browse)
         path_row.addWidget(browse)
         form.addRow("Папка Steam", path_row)
-        self.api_key = QLineEdit(api_key)
+        self.api_key = AnimatedLineEdit(api_key)
         self.api_key.setEchoMode(QLineEdit.EchoMode.Password)
         self.api_key.setMaxLength(256)
         self.api_key.setPlaceholderText("Необязательно")

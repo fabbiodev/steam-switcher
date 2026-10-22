@@ -1,7 +1,7 @@
 """Account catalog, import/export and login settings without Qt or file APIs."""
 from pathlib import Path
 import time
-from steam_sda.domain.accounts import metadata, token_valid
+from steam_sda.domain.accounts import metadata, token_valid, session_status
 from steam_sda.domain.errors import SteamError
 from .ports import AccountRepository, AccountArchivesPort
 
@@ -17,6 +17,8 @@ def capture_native_session(row, native, token_bridge):
                     row['session'] = {'refresh_token': token}
                     for key in ('last_check', 'next_check', 'auth_error'):
                         row.pop(key, None)
+                native_row = next(a for a in accounts if a['steam_id'] == row['steam_id'])
+                row['session_origin'] = 'steam_temporary' if native_row.get('remembered') is False else 'steam_cache'
     except (SteamError, OSError):
         pass
 
@@ -37,13 +39,42 @@ class AccountService:
         native_ids = {a['steam_id'] for a in rows}
         rows.extend({**metadata(a), 'remembered': False, 'imported': True}
                     for a in managed.values() if a['steam_id'] not in native_ids)
+        active = self.native.active_id() if self.native else None
+        for row in rows:
+            saved = managed.get(row['steam_id'], {})
+            label, portable, temporary = session_status(row, saved, row['steam_id'] == active)
+            row['temporary_session'] = temporary
+            row['session_saved'] = portable
+            row['session_label'] = label
         return rows, managed
 
     def bind_discovered(self, accounts):
+        excluded = self.vault.excluded()
         if self.devices:
-            excluded = self.vault.excluded()
             self.devices.bind_many([row for row in accounts if row['steam_id'] not in excluded])
+        active = self.native.active_id() if self.native else None
+        row = next((row for row in accounts if row['steam_id'] == active and row.get('remembered') is False
+                    and row['steam_id'] not in excluded), None)
+        if row:
+            self.save_session(row, required=False)
         return self.vault.all()
+
+    def save_session(self, account, required=True):
+        if account['steam_id'] in self.vault.excluded():
+            raise SteamError('Этот аккаунт удалён из базы. Сначала импортируйте его явно.')
+        row = {**self.vault.get(account['steam_id']), **metadata(account)}
+        before = {**row, 'session': dict(row.get('session', {}))}
+        capture_native_session(row, self.native, self.token_bridge)
+        available = token_valid(row.get('session', {}).get('refresh_token', ''), row['steam_id'], 'client', True)
+        if not available:
+            if required:
+                raise SteamError('Steam не сохранил переносимый токен этого входа. Для сохранения сессии используйте «Настроить автовход»: пароль или действующую сессию maFile.')
+            return None
+        if self.devices:
+            self.devices.ensure(row)
+        if row != before:
+            self.vault.save(row)
+        return self.vault.get(row['steam_id'])
 
     def delete(self, sid):
         """Forget local credentials and suppress automatic Steam rediscovery."""

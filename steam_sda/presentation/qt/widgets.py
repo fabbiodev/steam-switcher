@@ -1,7 +1,7 @@
 """Accessible Qt controls with short hover transitions and local vector icons."""
 from PyQt6.QtCore import Qt, QSize, QRectF, QPropertyAnimation, QEasingCurve, pyqtProperty
 from PyQt6.QtGui import QColor, QPainter, QPen, QLinearGradient
-from PyQt6.QtWidgets import QLabel, QPushButton, QSizePolicy, QWidget
+from PyQt6.QtWidgets import QLabel, QPushButton, QSizePolicy, QWidget, QLineEdit
 from .icons import icon
 from .motion import enabled
 from .theme import COLORS
@@ -100,7 +100,7 @@ class ActionButton(QPushButton):
             background = _mix(COLORS['action'], '#ffdabd', self._hover)
             bottom, border, foreground = '#d6a17c', '#f6cbaa', COLORS['action_text']
         elif self.isChecked():
-            background, bottom, border, foreground = '#403354', '#342b46', '#776197', '#e1d4ff'
+            background, bottom, border, foreground = _mix('#403354', '#57416f', self._hover), '#342b46', '#776197', '#e1d4ff'
         elif self.property('danger'):
             background = _mix('#432731', '#57313e', self._hover)
             bottom, border, foreground = '#36222d', '#7c4c5d', '#f6bfca'
@@ -134,6 +134,60 @@ class ActionButton(QPushButton):
         painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter,
                          painter.fontMetrics().elidedText(self.text(), Qt.TextElideMode.ElideRight, max(0, int(text_rect.width()))))
         painter.end()
+
+
+class AnimatedLineEdit(QLineEdit):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._glow = 0.0
+        self.glow_animation = QPropertyAnimation(self, b'glowProgress', self)
+        self.glow_animation.setDuration(140)
+        self.glow_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+    @pyqtProperty(float)
+    def glowProgress(self):
+        return self._glow
+
+    @glowProgress.setter
+    def glowProgress(self, value):
+        self._glow = value
+        self.update()
+
+    def _animate_glow(self, amount):
+        self.glow_animation.stop()
+        if enabled():
+            self.glow_animation.setStartValue(self._glow)
+            self.glow_animation.setEndValue(amount)
+            self.glow_animation.start()
+        else:
+            self.glowProgress = amount
+
+    def enterEvent(self, event):
+        self._animate_glow(1.0 if self.hasFocus() else .6)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._animate_glow(1.0 if self.hasFocus() else 0.0)
+        super().leaveEvent(event)
+
+    def focusInEvent(self, event):
+        self._animate_glow(1.0)
+        super().focusInEvent(event)
+
+    def focusOutEvent(self, event):
+        self._animate_glow(.6 if self.underMouse() else 0.0)
+        super().focusOutEvent(event)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if self._glow > .001 and self.isEnabled():
+            painter = QPainter(self)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            color = QColor(COLORS['accent'])
+            color.setAlphaF(self._glow * .85)
+            painter.setPen(QPen(color, 1.5))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRoundedRect(QRectF(self.rect()).adjusted(1, 1, -1, -1), 11, 11)
 
 
 def label(text="", name=""):

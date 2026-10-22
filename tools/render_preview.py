@@ -28,7 +28,7 @@ app.setStyleSheet((root/'assets/style.qss').read_text())
 store = MemoryStore()
 store.write('levels.json', {ONE: {'level':64,'source':'Steam Community','updated_at':time.time()},
                             TWO: {'level':23,'source':'Steam Web API','updated_at':time.time()}})
-AccountVault(store).save({**record(TWO, 'second_login'), 'name': 'second account', 'hwid': profile(TWO)})
+AccountVault(store).save({**record(TWO, 'second_login'), 'name': 'second account', 'hwid': profile(TWO), 'session_origin': 'steam_temporary'})
 win = MainWindow(create_services(NativeFixture(), store, enable_devices=False), start_services=False)
 win.account_rows[0].update(name='nightshift',login='night_login')
 win.account_rows[1].update(name='second account',login='second_login')

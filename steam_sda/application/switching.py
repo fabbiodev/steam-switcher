@@ -157,16 +157,26 @@ class Switcher:
                 managed = self.vault.get(steam_id)
             if previous == steam_id and (not self.devices or self.devices.is_applied(steam_id)):
                 return {"state": "ready", "steam_id": steam_id}
+            # An unchecked "remember me" session can disappear on shutdown.
+            # Save only the selected target and current owner before closing it.
+            if self.vault and self.token_bridge:
+                for sid in dict.fromkeys((steam_id, previous)):
+                    native_row = next((a for a in before_rows if a['steam_id'] == sid), None)
+                    if not native_row:
+                        continue
+                    if sid != steam_id and native_row.get('remembered') is not False:
+                        continue
+                    record = {**self.vault.get(sid), **{key: native_row[key] for key in ('steam_id', 'login', 'name')}}
+                    before = {**record, 'session': dict(record.get('session', {}))}
+                    capture_native_session(record, self.native, self.token_bridge)
+                    if record != before:
+                        self.vault.save(record)
+                managed = self.vault.get(steam_id)
             progress("Закрываю Steam…")
             self.native.stop()
             data = None
             try:
                 authenticated = None
-                if managed and self.auth and self.token_bridge:
-                    old_session = managed.get('session', {})
-                    capture_native_session(managed, self.native, self.token_bridge)
-                    if managed.get('session', {}) != old_session:
-                        self.vault.save(managed)
                 # A manual switch must hand off the imported session even when
                 # background recovery is disabled or Steam remembers the name.
                 has_session = bool(managed.get('session', {}).get('refresh_token'))

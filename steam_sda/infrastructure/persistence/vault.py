@@ -99,6 +99,8 @@ class AccountVault:
                              row['steam_id'], 'client', True) else row.get('session') or previous_session)
         if old.get('hwid') or row.get('hwid'):
             merged['hwid'] = old.get('hwid') or row['hwid']
+        if old.get('session_origin') or row.get('session_origin'):
+            merged['session_origin'] = old.get('session_origin') or row['session_origin']
         if row.get('password') and not old.get('password'):
             merged['password'] = row['password']
         return merged

@@ -50,6 +50,14 @@ def token_valid(token, steam_id, audience, refresh=False, margin=0):
             and data['exp'] > time.time() + margin)
 
 
+def session_status(account, saved, active=False):
+    portable = token_valid(saved.get('session', {}).get('refresh_token', ''), account['steam_id'], 'client', True)
+    temporary = saved.get('session_origin') == 'steam_temporary' or (active and not account.get('remembered'))
+    label = ('Разовый вход · сессия в базе' if temporary else 'Сессия сохранена в базе') if portable else (
+        'Разовый вход · не сохранён' if temporary else 'Вход сохранён в Steam' if account.get('remembered') else 'Нужен вход или импорт сессии')
+    return label, portable, temporary
+
+
 def metadata(value):
     if not isinstance(value, dict) or not valid_id(value.get('steam_id')):
         raise SteamError("В аккаунте отсутствует корректный SteamID.")
@@ -151,6 +159,11 @@ def validate_record(value, known=()):
     if password:
         row['password'] = password
     row['auto_restore'] = value.get('auto_restore') is True
+    origin = value.get('session_origin')
+    if origin is not None:
+        if origin not in ('steam_temporary', 'steam_cache', 'steamkit'):
+            raise SteamError('Неизвестный источник сохранённой сессии.')
+        row['session_origin'] = origin
     for key in ('last_check', 'next_check'):
         number = value.get(key, 0)
         if type(number) in (int, float) and 0 <= number < time.time() + 86400:

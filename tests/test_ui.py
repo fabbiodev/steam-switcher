@@ -338,3 +338,49 @@ class UiTests(unittest.TestCase):
         self.assertEqual(self.win.list.reveal_animation.state(), self.win.list.reveal_animation.State.Stopped)
         self.win.list.smooth_scroll(160)
         self.assertEqual(self.win.list.scroll_animation.state(), self.win.list.scroll_animation.State.Stopped)
+
+    def test_save_temporary_session_is_visible_and_does_not_restart_or_authenticate(self):
+        from test_accounts_auth import jwt
+        token = jwt(TWO, refresh=True)
+        self.win.list.setCurrentRow(1)
+        with patch.object(self.win.desktop_token, 'selected_token', return_value=token), \
+                patch.object(self.win, '_begin_switch') as switch, patch.object(self.win, '_begin_auth') as auth:
+            self.win.save_session_button.click()
+        self.assertEqual(self.win.vault.get(TWO)['session']['refresh_token'], token)
+        self.assertIn('Разовый вход', self.win.session_state.text())
+        self.assertIn('сессия в базе', self.win.session_state.text())
+        switch.assert_not_called()
+        auth.assert_not_called()
+
+    def test_hover_feedback_fades_between_rows_and_disabled_motion_is_immediate(self):
+        listing = self.win.list
+        self.app.setProperty('animationsEnabled', True)
+        try:
+            self.win.show()
+            self.app.processEvents()
+            listing.set_hover_row(0)
+            listing.hover_animation.setCurrentTime(140)
+            self.assertEqual(listing.hover_amount(0), 1)
+            listing.set_hover_row(1)
+            listing.hover_animation.setCurrentTime(140)
+            self.assertEqual(listing.hover_amount(0), 0)
+            self.assertEqual(listing.hover_amount(1), 1)
+            listing.set_hover_row(-1)
+            listing.hover_animation.setCurrentTime(140)
+            self.assertEqual(listing.hover_amount(1), 0)
+        finally:
+            self.app.setProperty('animationsEnabled', False)
+
+    def test_search_focus_glow_preserves_typing_and_keyboard_selection(self):
+        self.app.setProperty('animationsEnabled', True)
+        try:
+            self.win.show()
+            self.app.processEvents()
+            self.win.search.setFocus()
+            self.app.processEvents()
+            self.win.search.glow_animation.setCurrentTime(140)
+            self.assertEqual(self.win.search.glowProgress, 1)
+            self.win.search.setText('second_login')
+            self.assertEqual(self.win.selected_id, TWO)
+        finally:
+            self.app.setProperty('animationsEnabled', False)
