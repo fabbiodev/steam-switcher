@@ -16,6 +16,8 @@ from steam_sda.domain.identity import identity_from_log
 from steam_sda.infrastructure.persistence.storage import atomic_write
 from steam_sda.infrastructure.ipc.processes import start_external
 from steam_sda.infrastructure.steam.vdf import accounts, chooser_preference
+from steam_sda.infrastructure.steam.vdf import read_value, write_value
+from steam_sda.domain.identity import valid_id
 from steam_sda.domain.identity import STEAM_ID_BASE
 
 if os.name == "nt":
@@ -205,6 +207,26 @@ class NativeSteam:
         patched = chooser_preference(raw, value)
         if patched != raw:
             atomic_write(self.root / "config" / "config.vdf", patched)
+
+    def account_mapping(self, login):
+        raw = self._read_config()
+        if raw is None:
+            return None
+        return read_value(raw, 'InstallConfigStore',
+                          ['Software', 'Valve', 'Steam', 'Accounts', login.casefold(), 'SteamID'])
+
+    def set_account_mapping(self, login, sid):
+        if not isinstance(login, str) or not login or (sid is not None and not valid_id(sid)):
+            raise SteamError('Некорректная запись аккаунта в настройках Steam.')
+        raw = self._read_config()
+        if raw is None:
+            if sid is None:
+                return
+            raw = b'"InstallConfigStore"\n{\n}\n'
+        patched = write_value(raw, 'InstallConfigStore',
+                              ['Software', 'Valve', 'Steam', 'Accounts', login.casefold(), 'SteamID'], sid)
+        if patched != raw:
+            atomic_write(self.root / 'config/config.vdf', patched)
 
     def stop(self):
         if self.games_running():

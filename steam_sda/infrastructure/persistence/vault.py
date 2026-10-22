@@ -1,7 +1,7 @@
 """DPAPI-backed implementation of the account repository."""
 import json
 import threading
-from steam_sda.domain.accounts import validate_record, metadata
+from steam_sda.domain.accounts import validate_record, validate_records, metadata, token_valid
 from steam_sda.domain.errors import SteamError
 from steam_sda.domain.identity import valid_id
 
@@ -66,18 +66,39 @@ class AccountVault:
         self.store.write(VAULT, data, encrypted=True)
 
     def import_record(self, record):
-        row = validate_record(record)
-        old = self.get(row['steam_id'])
+        return self.import_records([record])[0]
+
+    def import_records(self, records):
+        """Validate and merge the entire batch before one encrypted write."""
+        with self.lock:
+            data, removed = self.all(), self.excluded()
+            rows = validate_records(records, list(data.values()))
+            merged = []
+            for row in rows:
+                result = validate_record(self._merge_import(row, data.get(row['steam_id'], {})))
+                data[row['steam_id']] = result
+                removed.discard(row['steam_id'])
+                merged.append(result)
+            if removed:
+                data['_removed'] = sorted(removed)
+            if len(json.dumps(data, ensure_ascii=False).encode()) > 6 * 1024 * 1024:
+                raise SteamError('Хранилище аккаунтов слишком велико. Исходные данные сохранены.')
+            self.store.write(VAULT, data, encrypted=True)
+            return merged
+
+    @staticmethod
+    def _merge_import(row, old):
         if old and old['login'].casefold() != row['login'].casefold():
             raise SteamError("Логин импортируемого аккаунта отличается от сохранённого.")
         # Import cannot silently enable automation or replace a working token.
         merged = {**old, **metadata(row), 'auto_restore': old.get('auto_restore', False)}
         if row.get('mafile'):
             merged['mafile'] = row['mafile']
-        merged['session'] = old.get('session') or row.get('session', {})
+        previous_session = old.get('session', {})
+        merged['session'] = (previous_session if token_valid(previous_session.get('refresh_token', ''),
+                             row['steam_id'], 'client', True) else row.get('session') or previous_session)
         if old.get('hwid') or row.get('hwid'):
             merged['hwid'] = old.get('hwid') or row['hwid']
         if row.get('password') and not old.get('password'):
             merged['password'] = row['password']
-        self.save(merged)
         return merged

@@ -26,6 +26,23 @@ class DeviceProfiles:
             for account in missing:
                 self._ensure(account, snapshot)
 
+    def prepare_import(self, accounts):
+        """Prepare first bindings without writing a partial imported batch."""
+        with self._lock:
+            rows = copy.deepcopy(accounts)
+            snapshot = None
+            for row in rows:
+                sid = row['steam_id']
+                profile = self.vault.get(sid).get('hwid') or row.get('hwid')
+                if not profile:
+                    if snapshot is None:
+                        snapshot = self.gateway.call('--capture-device').get('hwid', {})
+                        if not isinstance(snapshot, dict):
+                            raise SteamError('Модуль устройства вернул некорректный HWID-профиль.')
+                    profile = {**snapshot, 'steam_id': sid, 'captured_at': time.time()}
+                row['hwid'] = validate_profile(profile, sid)
+            return rows
+
     def _ensure(self, account, snapshot=None):
         """First association wins, regardless of maFile/session import order."""
         from steam_sda.domain.accounts import metadata

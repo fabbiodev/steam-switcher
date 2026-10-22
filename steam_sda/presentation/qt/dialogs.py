@@ -75,13 +75,14 @@ class ArchivePasswordDialog(QInputDialog):
 
 
 class ExportDialog(QDialog):
-    def __init__(self, has_secrets, parent):
+    def __init__(self, has_secrets, parent, account_count=1):
         super().__init__(parent)
-        self.setWindowTitle('Экспорт аккаунта')
+        self.setWindowTitle('Экспорт всей базы аккаунтов')
         self.setMinimumWidth(460)
         box = QVBoxLayout(self)
         box.setContentsMargins(24, 24, 24, 24)
         box.setSpacing(14)
+        box.addWidget(label(f'Аккаунтов в архиве: {account_count}', 'headline'))
         self.secrets = QCheckBox('Включить maFile и токены входа')
         self.secrets.setEnabled(has_secrets)
         self.secrets.setChecked(has_secrets)

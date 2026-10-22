@@ -6,6 +6,7 @@ import time
 from steam_sda.domain.errors import SteamError
 from steam_sda.domain.identity import valid_id
 from .ports import SteamPort, StorePort
+from .accounts import capture_native_session
 
 JOURNAL = "switch-recovery.dpapi"
 
@@ -58,6 +59,12 @@ class Switcher:
                 raise ValueError()
             if data.get("chooser") not in (None, "0", "1"):
                 raise ValueError()
+            mapping = data.get('config_account')
+            if mapping is not None and (not isinstance(mapping, dict)
+                    or 'before' not in mapping
+                    or mapping.get('selected') != data['target']
+                    or (mapping.get('before') is not None and not valid_id(mapping['before']))):
+                raise ValueError()
             desktop = data.get('desktop')
             if desktop is not None:
                 if not self.token_bridge or not isinstance(desktop, dict):
@@ -92,6 +99,10 @@ class Switcher:
         current_reg = self.native.registry_value()
         if current_reg != data["registry"] and current_reg.get("value") != data["target_login"]:
             raise SteamError("Выбор аккаунта Steam изменён другой программой. Резервная копия сохранена.")
+        mapping = data.get('config_account')
+        current_mapping = self.native.account_mapping(data['target_login']) if mapping else None
+        if mapping and current_mapping not in (mapping['before'], mapping['selected']):
+            raise SteamError('Запись аккаунта в config.vdf изменена другой программой. Резервная копия сохранена.')
         if current == original or hashlib.sha256(current).hexdigest() == data["selected_hash"]:
             restored = original
         elif data.get("previous"):
@@ -120,6 +131,8 @@ class Switcher:
         self.native.set_chooser("0" if use_previous_session else data.get("chooser"))
         if data.get('desktop'):
             self.token_bridge.rollback(data['target_login'], data['desktop']['before'], data['desktop']['selected'])
+        if mapping and current_mapping == mapping['selected']:
+            self.native.set_account_mapping(data['target_login'], mapping['before'])
 
     def switch(self, steam_id, progress=lambda text: None):
         with self.native.exclusive():
@@ -149,7 +162,16 @@ class Switcher:
             data = None
             try:
                 authenticated = None
-                if managed and self.auth and (managed.get('auto_restore') or not any(a['steam_id'] == steam_id for a in before_rows)):
+                if managed and self.auth and self.token_bridge:
+                    old_session = managed.get('session', {})
+                    capture_native_session(managed, self.native, self.token_bridge)
+                    if managed.get('session', {}) != old_session:
+                        self.vault.save(managed)
+                # A manual switch must hand off the imported session even when
+                # background recovery is disabled or Steam remembers the name.
+                has_session = bool(managed.get('session', {}).get('refresh_token'))
+                if managed and self.auth and (has_session or managed.get('auto_restore')
+                        or not any(a['steam_id'] == steam_id for a in before_rows)):
                     progress("Восстанавливаю вход через SteamKit…")
                     authenticated = self.auth.authenticate(steam_id)
                 raw = self.native.read_logins()
@@ -178,12 +200,18 @@ class Switcher:
                     from steam_sda.domain.accounts import metadata
                     data['verified_target'] = metadata(authenticated)
                     data['desktop'] = {'before': self.token_bridge.snapshot(authenticated), 'selected': self.token_bridge.encoded(authenticated)}
+                    old_mapping = self.native.account_mapping(authenticated['login'])
+                    if old_mapping not in (None, steam_id):
+                        data = None
+                        raise SteamError('Логин в config.vdf связан с другим SteamID. Передача сессии остановлена.')
+                    data['config_account'] = {'before': old_mapping, 'selected': steam_id}
                 self.store.write(JOURNAL, data, encrypted=True)
                 if self.native.read_logins() != raw:
                     raise SteamError("Данные Steam изменились. Повторите переключение.")
                 self.native.write_logins(patched)
                 if authenticated:
                     self.token_bridge.apply(authenticated['login'], data['desktop']['selected'])
+                    self.native.set_account_mapping(authenticated['login'], steam_id)
                 self.native.set_registry({"exists": True, "value": selected["login"], "kind": 1})
                 if authenticated or selected["remembered"]:
                     self.native.set_remember({"exists": True, "value": 1, "kind": 4})

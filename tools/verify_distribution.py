@@ -36,7 +36,7 @@ def verify(archive, report_path):
             raise RuntimeError(f'Relocated application check failed (exit {result.returncode}).')
         summary = json.loads(report.read_text(encoding='utf-8'))
         if not all(summary.get(key) is True for key in
-                   ('ok', 'external_application_code', 'organized_distribution', 'local_account_deletion')):
+                   ('ok', 'external_application_code', 'organized_distribution', 'local_account_deletion', 'database_roundtrip')):
             raise RuntimeError('Relocated application did not confirm its layout and account workflow.')
         Path(report_path).write_text(json.dumps(summary, indent=2), encoding='utf-8')
     print('Relocated ZIP: external app code, runtime, UI, account deletion and SteamKit passed.')

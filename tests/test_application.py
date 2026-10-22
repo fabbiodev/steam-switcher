@@ -39,6 +39,24 @@ class AccountWorkflowTests(unittest.TestCase):
         self.tokens.selected_token.assert_called_once()
         self.assertEqual(self.tokens.selected_token.call_args.args[0]['steam_id'], ONE)
 
+    def test_export_prefers_rotated_native_token_over_unexpired_stale_vault_token(self):
+        stale = record()
+        self.vault.save(stale)
+        self.native.account_list.return_value = [stale, record(TWO, 'second_login')]
+        refreshed = jwt(refresh=True, expires=2000000000)
+        self.tokens.selected_token.return_value = refreshed
+        result = self.service.prepare_export(stale)
+        self.tokens.selected_token.assert_called_once()
+        self.assertEqual(result['session'], {'refresh_token': refreshed})
+        self.assertEqual(self.vault.get(ONE)['session'], stale['session'])
+
+    def test_unavailable_native_cache_keeps_existing_export_session(self):
+        row = record()
+        self.vault.save(row)
+        self.native.account_list.return_value = [row]
+        self.tokens.selected_token.side_effect = SteamError('cache unavailable')
+        self.assertEqual(self.service.prepare_export(row)['session'], row['session'])
+
     def test_one_time_password_is_not_persisted_and_profile_survives_configuration(self):
         original = {**record(), 'hwid': profile()}
         self.vault.save(original)

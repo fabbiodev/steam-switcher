@@ -6,6 +6,21 @@ from steam_sda.domain.errors import SteamError
 from .ports import AccountRepository, AccountArchivesPort
 
 
+def capture_native_session(row, native, token_bridge):
+    """Refresh only this owner's token after Steam may have rotated it."""
+    try:
+        accounts = native.account_list() if native else []
+        if any(a['steam_id'] == row['steam_id'] and a['login'].casefold() == row['login'].casefold() for a in accounts):
+            token = token_bridge.selected_token(row)
+            if token_valid(token, row['steam_id'], 'client', True):
+                if token != row.get('session', {}).get('refresh_token'):
+                    row['session'] = {'refresh_token': token}
+                    for key in ('last_check', 'next_check', 'auth_error'):
+                        row.pop(key, None)
+    except (SteamError, OSError):
+        pass
+
+
 class AccountService:
     def __init__(self, vault: AccountRepository, archives: AccountArchivesPort, native, token_bridge, devices=None):
         self.vault, self.archives = vault, archives
@@ -37,16 +52,9 @@ class AccountService:
             self.devices.forget(sid)
 
     def capture_selected_token(self, row):
-        if token_valid(row.get('session', {}).get('refresh_token', ''), row['steam_id'], 'client', True):
-            return
-        try:
-            native = self.native.account_list() if self.native else []
-            if any(a['steam_id'] == row['steam_id'] and a['login'].casefold() == row['login'].casefold() for a in native):
-                token = self.token_bridge.selected_token(row)
-                if token:
-                    row['session'] = {'refresh_token': token}
-        except (SteamError, OSError):
-            pass
+        # Steam may rotate its durable token while the vault's old token still
+        # has an unexpired JWT timestamp. Prefer the selected native cache.
+        capture_native_session(row, self.native, self.token_bridge)
 
     def import_file(self, path, password='', known=()):
         row = self.archives.read(path, password, known)
@@ -70,6 +78,25 @@ class AccountService:
 
     def export_file(self, path, row, password='', include_secrets=True):
         self.archives.write(path, row, password, include_secrets)
+
+    def import_all_file(self, path, password='', known=()):
+        if Path(path).suffix.casefold() == '.mafile':
+            return [self.import_file(path, password, known)]
+        rows = self.archives.read_all(path, password, known)
+        if self.devices:
+            rows = self.devices.prepare_import(rows)
+        return self.vault.import_records(rows)
+
+    def prepare_all_export(self):
+        rows, _ = self.catalog()
+        if not rows:
+            raise SteamError('В базе нет аккаунтов для экспорта.')
+        if self.devices:
+            self.devices.bind_many(rows)
+        return [self.prepare_export(row) for row in rows]
+
+    def export_all_file(self, path, rows, password='', include_secrets=True):
+        self.archives.write_all(path, rows, password, include_secrets)
 
     def configure_login(self, account, auto_restore, password=None, remember=False, clear_password=False):
         row = {**self.vault.get(account['steam_id']), **metadata(account)}

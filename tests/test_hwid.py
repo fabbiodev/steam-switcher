@@ -238,6 +238,7 @@ class NativeProfileTests(unittest.TestCase):
             response = json.loads(result.stdout)
             self.assertTrue(response.get('ok'), response.get('error'))
             self.assertEqual(response['machine_id_sha256'], fingerprint(p))
+            self.assertTrue(response['observation_parser_test'])
             if (helper.parent / 'SteamSDA.DeviceFixture.exe').exists():
                 self.assertTrue(response['suspended_process_test'])
 

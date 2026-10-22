@@ -4,6 +4,7 @@
 #include <objbase.h>
 #include <MinHook.h>
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <string>
@@ -22,6 +23,39 @@ struct DeviceData {
 static_assert(sizeof(DeviceData) == 3476);
 static DeviceData saved{};
 static HMODULE client{}, tier{};
+
+// Passive observation only. The parent reads this export with VM_READ after
+// startup. Install-time test calls are cleared before the main thread resumes.
+#pragma pack(push, 1)
+struct Observation {
+    DWORD version;
+    volatile LONG sequence;
+    DWORD calls[6];
+    DeviceData returned;
+};
+#pragma pack(pop)
+static_assert(sizeof(Observation) == 3508);
+extern "C" {
+    alignas(8) __declspec(dllexport) Observation SteamSDA_Observations{1};
+}
+static SRWLOCK observation_lock = SRWLOCK_INIT;
+static void observe(size_t index, size_t offset, const void* data, size_t size) {
+    AcquireSRWLockExclusive(&observation_lock);
+    InterlockedIncrement(&SteamSDA_Observations.sequence);
+    std::memcpy(reinterpret_cast<unsigned char*>(&SteamSDA_Observations.returned) + offset, data, size);
+    ++SteamSDA_Observations.calls[index];
+    InterlockedIncrement(&SteamSDA_Observations.sequence);
+    ReleaseSRWLockExclusive(&observation_lock);
+}
+static void reset_observations() {
+    AcquireSRWLockExclusive(&observation_lock);
+    InterlockedIncrement(&SteamSDA_Observations.sequence);
+    std::memset(SteamSDA_Observations.calls, 0, sizeof(SteamSDA_Observations.calls));
+    std::memset(&SteamSDA_Observations.returned, 0, sizeof(DeviceData));
+    SteamSDA_Observations.returned.version = 1;
+    InterlockedIncrement(&SteamSDA_Observations.sequence);
+    ReleaseSRWLockExclusive(&observation_lock);
+}
 
 template<size_t N> bool valid(const char (&s)[N], bool empty = false) {
     const auto end = static_cast<const char*>(std::memchr(s, 0, N));
@@ -81,25 +115,41 @@ extern "C" __declspec(dllexport) DWORD WINAPI SteamSDA_Capture(DeviceData* d) {
 static char __fastcall get_guid(unsigned char* out, DWORD capacity) {
     if (!out || capacity <= std::strlen(saved.guid)) return 0;
     std::memcpy(out, saved.guid, std::strlen(saved.guid) + 1);
+    observe(0, offsetof(DeviceData, guid), out, std::strlen(saved.guid) + 1);
     return 1;
 }
 static DWORD __fastcall get_network(unsigned long long* out) {
     if (!out) return ERROR_INVALID_PARAMETER;
     std::memcpy(out, saved.network, sizeof(saved.network));
+    observe(1, offsetof(DeviceData, network), out, sizeof(saved.network));
     return ERROR_SUCCESS;
 }
-static DWORD __fastcall get_fallback(unsigned long long* out, char) { return get_network(out); }
+static DWORD __fastcall get_fallback(unsigned long long* out, char) {
+    if (!out) return ERROR_INVALID_PARAMETER;
+    std::memcpy(out, saved.network, sizeof(saved.network));
+    observe(2, offsetof(DeviceData, network), out, sizeof(saved.network));
+    return ERROR_SUCCESS;
+}
 static bool __fastcall get_disk(unsigned char* out, int capacity) {
     if (!out || capacity <= 0 || static_cast<size_t>(capacity) <= std::strlen(saved.disk)) return false;
     std::memcpy(out, saved.disk, std::strlen(saved.disk) + 1);
+    observe(3, offsetof(DeviceData, disk), out, std::strlen(saved.disk) + 1);
     return true;
 }
-static const char* __fastcall get_hostname() { return saved.hostname; }
+static const char* __fastcall get_hostname() {
+    observe(4, offsetof(DeviceData, hostname), saved.hostname, std::strlen(saved.hostname) + 1);
+    return saved.hostname;
+}
 static bool __fastcall get_fqdn(char* out, size_t capacity) {
     if (!out || !capacity) return false;
     out[0] = 0;
-    if (!saved.fqdn[0] || capacity <= std::strlen(saved.fqdn)) return false;
+    if (!saved.fqdn[0]) {
+        observe(5, offsetof(DeviceData, fqdn), out, 1);
+        return false;
+    }
+    if (capacity <= std::strlen(saved.fqdn)) return false;
     std::memcpy(out, saved.fqdn, std::strlen(saved.fqdn) + 1);
+    observe(5, offsetof(DeviceData, fqdn), out, std::strlen(saved.fqdn) + 1);
     return true;
 }
 
@@ -118,6 +168,7 @@ static DWORD check_outputs() {
 extern "C" __declspec(dllexport) DWORD WINAPI SteamSDA_Test(DeviceData* d) {
     if (!d || !valid_profile(*d)) return 1;
     saved = *d;
+    reset_observations();
     return check_outputs();
 }
 
@@ -142,6 +193,7 @@ extern "C" __declspec(dllexport) DWORD WINAPI SteamSDA_TestHooks(DeviceData* d) 
     for (size_t i = 0; i < 6; ++i)
         if (MH_CreateHook(targets[i], hooks[i], nullptr) != MH_OK) return 2;
     if (MH_EnableHook(MH_ALL_HOOKS) != MH_OK) return 3;
+    reset_observations();
     test_installed = true;
     return 0;
 }
@@ -159,6 +211,12 @@ extern "C" __declspec(dllexport) DWORD WINAPI SteamSDA_Probe() {
     if (network(n.data()) || fallback(n.data(), 1) || std::memcmp(n.data(), saved.network, 16) || n[2] != 0x123456789abcdef0ull) return 2;
     if (!disk(reinterpret_cast<unsigned char*>(d), sizeof(d)) || std::strcmp(d, saved.disk)) return 3;
     if (std::strcmp(host(), saved.hostname) || fqdn(f, sizeof(f)) != (saved.fqdn[0] != 0) || std::strcmp(f, saved.fqdn)) return 4;
+    for (const auto calls : SteamSDA_Observations.calls)
+        if (!calls) return 5;
+    const auto& returned = SteamSDA_Observations.returned;
+    if (std::strcmp(returned.guid, saved.guid) || std::memcmp(returned.network, saved.network, 16)
+        || std::strcmp(returned.disk, saved.disk) || std::strcmp(returned.hostname, saved.hostname)
+        || std::strcmp(returned.fqdn, saved.fqdn) || (SteamSDA_Observations.sequence & 1)) return 6;
     return 0;
 }
 
@@ -190,6 +248,7 @@ extern "C" __declspec(dllexport) DWORD WINAPI SteamSDA_Install(DeviceData* d) {
     if (!at<Disk>(disk_rva)(reinterpret_cast<unsigned char*>(disk), sizeof(disk)) || std::strcmp(disk, saved.disk)) return 6;
     if (std::strcmp(reinterpret_cast<Hostname>(targets[4])(), saved.hostname)) return 6;
     if (reinterpret_cast<Fqdn>(targets[5])(fqdn, sizeof(fqdn)) != (saved.fqdn[0] != 0) || std::strcmp(fqdn, saved.fqdn)) return 6;
+    reset_observations();
     return 0;
 }
 

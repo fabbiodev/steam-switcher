@@ -178,6 +178,36 @@ class UiTests(unittest.TestCase):
             self.assertEqual(selected.call_args.args[0]['steam_id'], ONE)
         self.assertTrue(row['session']['refresh_token'])
 
+    def test_export_database_includes_every_account_even_with_filtered_selection(self):
+        import tempfile
+        from steam_sda.infrastructure.persistence.archives import import_accounts
+        self.win.search.setText('second_login')
+        self.assertEqual(self.win.list.count(), 1)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'accounts.zip'
+            with patch.object(self.win.desktop_token, 'selected_token', return_value=''), \
+                    patch('steam_sda.presentation.qt.window.ExportDialog.exec', return_value=QDialog.DialogCode.Accepted), \
+                    patch('steam_sda.presentation.qt.window.QFileDialog.getSaveFileName', return_value=(str(path), 'ZIP')):
+                self.win.export_button.click()
+            self.assertEqual({r['steam_id'] for r in import_accounts(path)}, {ONE, TWO})
+            self.assertIn('Аккаунтов: 2', self.win.banner.text())
+
+    def test_import_database_adds_all_rows_without_starting_an_account(self):
+        import tempfile
+        from test_accounts_auth import record
+        from test_core import THREE
+        from steam_sda.infrastructure.persistence.archives import export_accounts
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'accounts.zip'
+            export_accounts(path, [record(), record(THREE, 'third_login')])
+            with patch('steam_sda.presentation.qt.window.QFileDialog.getOpenFileName', return_value=(str(path), 'ZIP')), \
+                    patch('steam_sda.presentation.qt.window.ArchivePasswordDialog.exec', return_value=QDialog.DialogCode.Accepted), \
+                    patch.object(self.win, '_begin_auth') as auth:
+                self.win.import_button.click()
+            self.assertEqual(set(self.win.vault.all()), {ONE, THREE})
+            self.assertEqual({r['steam_id'] for r in self.win.account_rows}, {ONE, TWO, THREE})
+            auth.assert_not_called()
+
     def test_delete_requires_confirmation_and_removes_only_selected_account(self):
         with patch('steam_sda.presentation.qt.window.DeleteAccountDialog.exec', return_value=QDialog.DialogCode.Rejected):
             self.win.delete_selected()
@@ -212,8 +242,9 @@ class UiTests(unittest.TestCase):
     def test_empty_search_disables_account_actions_and_activity_is_bounded(self):
         self.win.search.setText('no_such_account')
         self.assertEqual(self.win.list.count(), 0)
-        for action in (self.win.switch_button, self.win.delete_button, self.win.copy_button, self.win.export_button):
+        for action in (self.win.switch_button, self.win.delete_button, self.win.copy_button):
             self.assertFalse(action.isEnabled())
+        self.assertTrue(self.win.export_button.isEnabled())
         for i in range(30): self.win.message(f'Synthetic event {i}')
         self.assertEqual(self.win.activity_list.count(), 20)
         self.assertIn('Synthetic event 29', self.win.activity_list.item(0).text())

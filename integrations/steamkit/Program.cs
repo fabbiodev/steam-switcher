@@ -23,7 +23,7 @@ try
     if (input is null || input.Length > 100000) throw new AuthFailure("invalid_input");
     using var document = JsonDocument.Parse(input);
     var request = document.RootElement;
-    if (args.Length == 1 && args[0] is "--capture-device" or "--check-device" or "--launch-device" or "--device-self-test" or "--device-hook-self-test")
+    if (args.Length == 1 && args[0] is "--capture-device" or "--check-device" or "--launch-device" or "--device-self-test" or "--device-hook-self-test" or "--observe-device")
     {
         var root = Path.GetFullPath(Text(request, "steam_path"));
         object output;
@@ -31,6 +31,7 @@ try
         else if (args[0] == "--device-hook-self-test") output = DeviceHost.TestInstalled(root, new SavedDevice(request.GetProperty("hwid")));
         else if (args[0] == "--capture-device") output = DeviceHost.Capture(root);
         else if (args[0] == "--launch-device") output = DeviceHost.Launch(root, new SavedDevice(request.GetProperty("hwid")));
+        else if (args[0] == "--observe-device") output = DeviceHost.Observe(root, new SavedDevice(request.GetProperty("hwid")), request.GetProperty("steam_pid").GetInt32());
         else { DeviceHost.Check(root); output = new { ok = true }; }
         Console.WriteLine(JsonSerializer.Serialize(output));
         return;

@@ -66,7 +66,7 @@ def check_ui(app, report_path):
         elif hasattr(sys, '_MEIPASS'):
             summary['ok'] = False
             summary['steamkit'] = {'error': 'missing'}
-        from steam_sda.infrastructure.persistence.archives import export_account, import_account
+        from steam_sda.infrastructure.persistence.archives import export_account, import_account, export_accounts, import_accounts
         import base64
         synthetic = {'steam_id': '76561198000000001', 'name': 'UI check', 'login': 'night_login',
                      'mafile': {'account_name': 'night_login', 'shared_secret': base64.b64encode(bytes(20)).decode(),
@@ -81,6 +81,18 @@ def check_ui(app, report_path):
         summary['ok'] &= summary['encrypted_zip']
         summary['hwid_roundtrip'] = restored.get('hwid') == synthetic['hwid']
         summary['ok'] &= summary['hwid_roundtrip']
+        second = {'steam_id': '76561198000000002', 'name': 'Second check', 'login': 'second_login',
+                  'hwid': {**synthetic['hwid'], 'steam_id': '76561198000000002'}}
+        database = Path(directory) / 'synthetic-database.zip'
+        export_accounts(database, [synthetic, second], 'synthetic-ui-password')
+        from steam_sda.infrastructure.persistence.vault import AccountVault
+        imported_vault = AccountVault(Store(Path(directory) / 'imported'))
+        imported_vault.import_records(import_accounts(database, 'synthetic-ui-password'))
+        imported = imported_vault.all()
+        summary['database_roundtrip'] = (set(imported) == {synthetic['steam_id'], second['steam_id']}
+            and imported[synthetic['steam_id']]['mafile'] == restored['mafile']
+            and all(imported[row['steam_id']]['hwid'] == row['hwid'] for row in (synthetic, second)))
+        summary['ok'] &= summary['database_roundtrip']
         if helper_path().exists():
             check = run_external([str(helper_path()), '--device-self-test'],
                                  input=json.dumps({'steam_path': 'C:/SyntheticSteam', 'hwid': synthetic['hwid']}),

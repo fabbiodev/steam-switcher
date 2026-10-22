@@ -12,7 +12,7 @@ from .device import validate_profile
 LIMIT = 2 * 1024 * 1024
 
 
-def json_object(raw):
+def json_object(raw, limit=LIMIT):
     def pairs(items):
         result = {}
         for key, value in items:
@@ -21,7 +21,7 @@ def json_object(raw):
             result[key] = value
         return result
     try:
-        if len(raw) > LIMIT:
+        if len(raw) > limit:
             raise ValueError()
         result = json.loads(raw, object_pairs_hook=pairs)
         if not isinstance(result, dict):
@@ -105,6 +105,20 @@ def mafile_record(value, known=()):
     row['auto_restore'] = True
     row['session'] = {}
     return row
+
+
+def validate_records(values, known=()):
+    if not isinstance(values, list) or not 1 <= len(values) <= 1000:
+        raise SteamError('Архив должен содержать от 1 до 1000 аккаунтов.')
+    rows, ids, logins = [], set(), set()
+    for value in values:
+        row = validate_record(value, known)
+        if row['steam_id'] in ids or row['login'] in logins:
+            raise SteamError('В архиве повторяется SteamID или логин аккаунта.')
+        ids.add(row['steam_id'])
+        logins.add(row['login'])
+        rows.append(row)
+    return rows
 
 
 def validate_record(value, known=()):

@@ -67,6 +67,7 @@ class FakeNative:
         self.registry = {"exists": True, "value": "first_login", "kind": 1}
         self.remember = {"exists": False}
         self.chooser = "1"
+        self.account_mappings = {}
         self.active = ONE
         self.auto_login = True
         self.launches = self.stops = 0
@@ -84,6 +85,12 @@ class FakeNative:
     def remember_value(self): return copy.deepcopy(self.remember)
     def set_remember(self, value): self.remember = copy.deepcopy(value)
     def chooser_value(self): return self.chooser
+    def account_mapping(self, login): return self.account_mappings.get(login.casefold())
+    def set_account_mapping(self, login, sid):
+        if sid is None:
+            self.account_mappings.pop(login.casefold(), None)
+        else:
+            self.account_mappings[login.casefold()] = sid
     def set_chooser(self, value):
         if value is not None: self.chooser = value
     def set_registry(self, value):

@@ -100,10 +100,10 @@ class MainWindow(QMainWindow):
         self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.list.currentItemChanged.connect(self._select)
         side.addWidget(self.list, 1)
-        transfer = QHBoxLayout()
+        transfer = QVBoxLayout()
         transfer.setSpacing(8)
-        self.import_button = button('Импорт', self.import_selected)
-        self.export_button = button('Экспорт', self.export_selected)
+        self.import_button = button('Импорт базы', self.import_selected, icon_name='import')
+        self.export_button = button('Экспорт базы', self.export_selected, icon_name='export')
         transfer.addWidget(self.import_button)
         transfer.addWidget(self.export_button)
         side.addLayout(transfer)
@@ -259,8 +259,8 @@ class MainWindow(QMainWindow):
                                    ('Ctrl+E', self.export_button.click), ('Ctrl+R', self.reload_button.click)):
             shortcut = QShortcut(QKeySequence(sequence), self)
             shortcut.activated.connect(callback)
-        self.import_button.setToolTip('Импорт maFile или ZIP · Ctrl+I')
-        self.export_button.setToolTip('Экспорт выбранного аккаунта · Ctrl+E')
+        self.import_button.setToolTip('Импорт всей базы из ZIP или отдельного maFile · Ctrl+I')
+        self.export_button.setToolTip('Все аккаунты, сессии и HWID одним архивом · Ctrl+E')
 
     def message(self, text, error=False):
         if text:
@@ -387,7 +387,7 @@ class MainWindow(QMainWindow):
         self.login_button.setEnabled(bool(account) and not busy)
         self.renew_button.setEnabled(bool(managed) and not busy)
         self.import_button.setEnabled(not busy)
-        self.export_button.setEnabled(bool(account) and not busy)
+        self.export_button.setEnabled(bool(self.account_rows) and not busy)
         self.delete_button.setEnabled(bool(account) and not busy)
         self.profile_button.setEnabled(bool(account))
         self.copy_button.setEnabled(bool(account))
@@ -551,7 +551,7 @@ class MainWindow(QMainWindow):
             self.message("SteamID скопирован.")
 
     def import_selected(self):
-        path, _ = QFileDialog.getOpenFileName(self, 'Импорт аккаунта или maFile', '', 'Аккаунт Steam (*.zip *.maFile *.mafile)')
+        path, _ = QFileDialog.getOpenFileName(self, 'Импорт базы аккаунтов или maFile', '', 'База Steam / maFile (*.zip *.maFile *.mafile)')
         if not path:
             return
         password = ''
@@ -564,30 +564,30 @@ class MainWindow(QMainWindow):
             if not accepted:
                 return
         try:
-            merged = self.accounts.import_file(path, password, self.account_rows)
-            self.selected_id = merged['steam_id']
+            merged = self.accounts.import_all_file(path, password, self.account_rows)
+            self.selected_id = merged[0]['steam_id']
             self.reload_accounts()
-            self.message('Аккаунт импортирован. Исходный файл сохранён.')
-            if merged.get('auto_restore'):
-                self._begin_auth(merged['steam_id'])
+            self.message(f'Импорт завершён. Аккаунтов: {len(merged)}. Исходный файл сохранён.')
+            if Path(path).suffix.casefold() == '.mafile' and merged[0].get('auto_restore'):
+                self._begin_auth(merged[0]['steam_id'])
         except SteamError as exc:
             self.message(str(exc), True)
 
     def export_selected(self):
-        if not self.selected:
+        if not self.account_rows:
             return
         try:
-            row = self.accounts.prepare_export(self.selected)
+            rows = self.accounts.prepare_all_export()
         except SteamError as exc:
             self.message(str(exc), True)
             return
-        dialog = ExportDialog(bool(row.get('mafile') or row.get('session')), self)
+        dialog = ExportDialog(any(row.get('mafile') or row.get('session') for row in rows), self, account_count=len(rows))
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            path, _ = QFileDialog.getSaveFileName(self, 'Экспорт аккаунта', 'steam-account.zip', 'ZIP (*.zip)')
+            path, _ = QFileDialog.getSaveFileName(self, 'Экспорт всей базы аккаунтов', 'steam-accounts.zip', 'ZIP (*.zip)')
             if path:
                 try:
-                    self.accounts.export_file(path, row, dialog.password.text(), dialog.secrets.isChecked())
-                    self.message('Архив аккаунта сохранён.')
+                    self.accounts.export_all_file(path, rows, dialog.password.text(), dialog.secrets.isChecked())
+                    self.message(f'База сохранена одним архивом. Аккаунтов: {len(rows)}.')
                 except SteamError as exc:
                     self.message(str(exc), True)
         dialog.password.clear()

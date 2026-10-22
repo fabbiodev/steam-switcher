@@ -20,6 +20,7 @@ from steam_sda.domain.errors import SteamError
 from steam_sda.application.switching import Switcher, JOURNAL
 from steam_sda.application.authentication import AuthenticationService
 from steam_sda.infrastructure.steam.token_cache import DesktopToken
+from steam_sda.infrastructure.steam.client import NativeSteam
 from steam_sda.domain.errors import AuthError
 from steam_sda.infrastructure.resources import helper_path
 from steam_sda.infrastructure.persistence.storage import Store
@@ -150,6 +151,17 @@ class ImportExportTests(unittest.TestCase):
         self.assertFalse(merged['auto_restore'])
         self.assertEqual(merged['session'], first['session'])
 
+    def test_import_replaces_expired_local_session_with_portable_client_session(self):
+        vault = AccountVault(MemoryStore())
+        old = record()
+        old['session']['refresh_token'] = jwt(refresh=True, expires=1)
+        old['auto_restore'] = False
+        vault.save(old)
+        imported = record()
+        merged = vault.import_record(imported)
+        self.assertEqual(merged['session'], imported['session'])
+        self.assertFalse(merged['auto_restore'])
+
     @unittest.skipUnless(os.name == 'nt', 'Windows DPAPI')
     def test_vault_has_no_cleartext_secrets_on_disk(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -219,6 +231,27 @@ class SteamKitTests(unittest.TestCase):
 
 
 class DesktopBridgeTests(unittest.TestCase):
+    def test_install_config_mapping_preserves_other_accounts_and_can_roll_back_one_field(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'steam.exe').write_bytes(b'fixture')
+            (root / 'config').mkdir()
+            path = root / 'config/config.vdf'
+            raw = ('// keep comment\n"InstallConfigStore" { "Other" "opaque" "Software" { "Valve" { "Steam" { '
+                   '"MTBF" "1234567890" "Accounts" { "first_login" { "SteamID" "' + ONE + '" "Unknown" "keep" } } } } } }').encode()
+            path.write_bytes(raw)
+            native = NativeSteam(root)
+            self.assertIsNone(native.account_mapping('Third_Login'))
+            native.set_account_mapping('Third_Login', THREE)
+            self.assertEqual(native.account_mapping('third_login'), THREE)
+            self.assertEqual(native.account_mapping('first_login'), ONE)
+            self.assertIn(b'"MTBF" "1234567890"', path.read_bytes())
+            self.assertIn(b'"Unknown" "keep"', path.read_bytes())
+            self.assertTrue(path.read_bytes().startswith(b'// keep comment'))
+            native.set_account_mapping('third_login', None)
+            self.assertIsNone(native.account_mapping('third_login'))
+            self.assertEqual(native.account_mapping('first_login'), ONE)
+
     @unittest.skipUnless(os.name == 'nt', 'Windows DPAPI')
     def test_handoff_encrypts_correct_owner_and_rollback_retains_other_accounts(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -260,6 +293,7 @@ class FakeBridge:
     value = '11'
     def snapshot(self, row): return {'value': self.value, 'path': str(self.path)}
     def encoded(self, row): return 'aabb'
+    def selected_token(self, row): return ''
     def apply(self, login, value): self.value = value
     def rollback(self, login, before, selected):
         if self.value == selected: self.value = before['value']
@@ -284,6 +318,74 @@ class ManagedSwitchTests(unittest.TestCase):
         self.assertEqual(self.native.active_id(), THREE)
         self.assertEqual(len(self.native.account_list()), 3)
         self.assertEqual(self.bridge.value, 'aabb')
+        self.assertEqual(self.native.account_mapping(self.row['login']), THREE)
+
+    def test_portable_login_has_config_account_mapping_before_client_launch(self):
+        launch = self.native.launch
+        def requiring_mapping():
+            self.assertEqual(self.native.account_mapping(self.row['login']), THREE)
+            launch()
+        self.native.launch = requiring_mapping
+        self.assertEqual(self.switcher.switch(THREE)['state'], 'ready')
+
+    def test_failed_handoff_restores_mapping_and_keeps_unrelated_config_accounts(self):
+        self.native.account_mappings['first_login'] = ONE
+        self.native.fail_registry_once = True
+        with self.assertRaises(SteamError):
+            self.switcher.switch(THREE)
+        self.assertIsNone(self.native.account_mapping(self.row['login']))
+        self.assertEqual(self.native.account_mapping('first_login'), ONE)
+        self.assertFalse(self.switcher.has_recovery())
+
+    def test_conflicting_config_account_owner_stops_handoff_without_overwrite(self):
+        self.native.account_mappings[self.row['login']] = TWO
+        with self.assertRaises(SteamError):
+            self.switcher.switch(THREE)
+        self.assertEqual(self.native.read_logins(), RAW)
+        self.assertEqual(self.native.account_mapping(self.row['login']), TWO)
+        self.assertEqual(self.bridge.value, '11')
+        self.assertFalse(self.switcher.has_recovery())
+
+    def test_recovery_does_not_overwrite_mapping_changed_by_another_program(self):
+        self.native.auto_login = False
+        self.assertEqual(self.switcher.switch(THREE)['state'], 'login')
+        self.native.account_mappings[self.row['login']] = TWO
+        raw = self.native.read_logins()
+        with self.assertRaises(SteamError):
+            self.switcher.restore()
+        self.assertEqual(self.native.read_logins(), raw)
+        self.assertEqual(self.native.account_mapping(self.row['login']), TWO)
+        self.assertTrue(self.switcher.has_recovery())
+
+    def test_imported_session_is_handed_off_when_steam_already_lists_the_account_and_auto_is_off(self):
+        row = {**record(TWO, 'second_login'), 'auto_restore': False}
+        self.vault.save(row)
+        self.auth.authenticate.return_value = row
+        result = self.switcher.switch(TWO)
+        self.auth.authenticate.assert_called_once_with(TWO)
+        self.assertEqual(self.bridge.value, 'aabb')
+        self.assertEqual(result['state'], 'ready')
+        self.assertFalse(self.vault.get(TWO)['auto_restore'])
+
+    def test_manual_switch_uses_selected_native_rotated_token_before_authentication(self):
+        row = {**record(TWO, 'second_login'), 'auto_restore': False}
+        self.vault.save(row)
+        rotated = jwt(TWO, refresh=True, expires=2000000000)
+        self.bridge.selected_token = Mock(return_value=rotated)
+        self.auth.authenticate.side_effect = lambda sid: self.vault.get(sid)
+        self.assertEqual(self.switcher.switch(TWO)['state'], 'ready')
+        self.bridge.selected_token.assert_called_once()
+        self.assertEqual(self.bridge.selected_token.call_args.args[0]['steam_id'], TWO)
+        self.assertEqual(self.vault.get(TWO)['session']['refresh_token'], rotated)
+
+    def test_rejected_imported_session_does_not_silently_launch_password_screen(self):
+        self.vault.save({**record(TWO, 'second_login'), 'auto_restore': False})
+        self.auth.authenticate.side_effect = SteamError('session rejected')
+        with self.assertRaises(SteamError): self.switcher.switch(TWO)
+        self.assertEqual(self.native.active_id(), ONE)
+        self.assertEqual(self.native.read_logins(), RAW)
+        self.assertEqual(self.bridge.value, '11')
+        self.assertFalse(self.switcher.has_recovery())
 
     def test_auth_failure_restores_original_selection_without_creating_native_account(self):
         self.auth.authenticate.side_effect = SteamError('authentication failed')
