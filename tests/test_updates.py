@@ -56,7 +56,7 @@ class UpdateTests(unittest.TestCase):
 
     def test_wrong_repository_url_hash_size_and_duplicate_assets_fail_closed(self):
         for key, value in [('browser_download_url', 'https://example.org/update.exe'), ('digest', ''),
-                           ('digest', 'sha256:wrong'), ('size', 201 * 1024 * 1024), ('size', True)]:
+                           ('digest', 'sha256:wrong'), ('digest', None), ('size', 201 * 1024 * 1024), ('size', True)]:
             data = metadata()
             data['assets'][0][key] = value
             with self.subTest(key=key, value=value), self.assertRaises(SteamError):
@@ -148,7 +148,7 @@ class UpdateTests(unittest.TestCase):
             registered.mkdir(); portable.mkdir()
             for path in (registered, portable): (path / 'SteamSDA.exe').write_bytes(b'fixture')
             with patch.object(winreg, 'OpenKey') as opened, patch.object(winreg, 'QueryValueEx', return_value=(str(registered), winreg.REG_SZ)):
-                self.assertEqual(installation_directory(portable / 'SteamSDA.exe'), registered)
+                self.assertEqual(installation_directory(portable / 'SteamSDA.exe'), registered.resolve())
                 opened.assert_called_with(winreg.HKEY_CURRENT_USER, UNINSTALL_KEY)
             with patch.object(winreg, 'OpenKey', side_effect=FileNotFoundError):
-                self.assertEqual(installation_directory(portable / 'SteamSDA.exe'), portable)
+                self.assertEqual(installation_directory(portable / 'SteamSDA.exe'), portable.resolve())

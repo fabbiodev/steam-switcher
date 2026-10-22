@@ -45,6 +45,13 @@ def check_ui(app, report_path):
         win.reload_accounts(refresh_levels=False)
         summary['local_account_deletion'] = win.list.count() == 1 and win.selected_id == '76561198000000001'
         summary['ok'] &= summary['details_navigation'] and summary['local_account_deletion']
+        from steam_sda.presentation.qt.update_dialog import UpdateDialog
+        update_dialog = UpdateDialog(win.services.updates, parent=win)
+        summary['updates_ui'] = (win.updates_button.isEnabled() and update_dialog.automatic.isChecked()
+                                 and not update_dialog.install_button.isEnabled())
+        summary['ok'] &= summary['updates_ui']
+        update_dialog.close()
+        update_dialog.deleteLater()
         if getattr(sys, 'frozen', False):
             from steam_sda.infrastructure.resources import resource_path
             location = Path(sys.modules[MainWindow.__module__].__file__).resolve()

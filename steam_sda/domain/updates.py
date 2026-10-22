@@ -28,7 +28,7 @@ class UpdateRelease:
     def validate(self):
         version_tuple(self.version)
         expected = f'{RELEASES_URL}/download/v{self.version}/{self.filename}'
-        if (self.url != expected or not re.fullmatch(r'[a-f0-9]{64}', self.sha256)
+        if (self.url != expected or not isinstance(self.sha256, str) or not re.fullmatch(r'[a-f0-9]{64}', self.sha256)
                 or type(self.size) is not int or not 0 < self.size <= MAX_INSTALLER_SIZE):
             raise SteamError('Некорректные данные установщика обновления.')
         return self

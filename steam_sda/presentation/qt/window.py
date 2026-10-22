@@ -637,7 +637,12 @@ class MainWindow(QMainWindow):
         if self.auth_worker or self.switch_worker or self.update_worker or self._closing or not self.services.updates:
             return
         self._update_dialog_open = True
-        dialog = UpdateDialog(self.services.updates, self.available_update, self)
+        try:
+            dialog = UpdateDialog(self.services.updates, self.available_update, self)
+        except SteamError as exc:
+            self._update_dialog_open = False
+            self.message(str(exc), True)
+            return
         accepted = dialog.exec() == QDialog.DialogCode.Accepted
         self.available_update = dialog.release
         self._update_dialog_open = False
