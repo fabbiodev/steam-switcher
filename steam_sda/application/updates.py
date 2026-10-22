@@ -1,6 +1,7 @@
 """Update policy; network, filesystem and process operations stay in adapters."""
 import time
-from steam_sda.domain.updates import version_tuple
+from dataclasses import asdict
+from steam_sda.domain.updates import version_tuple, UpdateRelease
 from steam_sda.domain.errors import SteamError
 from .ports import StorePort, UpdateGateway
 
@@ -21,13 +22,24 @@ class UpdateService:
         settings = self.store.read('updates.json')
         checked = settings.get('checked_at', 0)
         recent = type(checked) in (int, float) and 0 <= time.time() - checked < 86400
-        if not force and (not self.automatic() or recent):
-            return None
+        if not force:
+            if not self.automatic():
+                return None
+            if recent:
+                cached = settings.get('available')
+                if cached is None:
+                    return None
+                try:
+                    release = UpdateRelease(**cached).validate()
+                    return release if version_tuple(release.version) > version_tuple(self.current) else None
+                except (TypeError, SteamError):
+                    pass
         release = self.gateway.latest(self.current, cancelled)
         if cancelled():
             raise SteamError('Проверка обновлений отменена.')
         settings = self.store.read('updates.json')
         settings['checked_at'] = time.time()
+        settings['available'] = asdict(release) if release else None
         self.store.write('updates.json', settings)
         return release
 

@@ -65,4 +65,4 @@ begin
   Result := WizardSilent and (ExpandConstant('{param:RELAUNCH|0}') = '1');
 end;
 
-; Account data is in %APPDATA%\SteamSDA and is deliberately not uninstalled.
+// Account data is in %APPDATA%\SteamSDA and is deliberately not uninstalled.
