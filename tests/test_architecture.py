@@ -52,7 +52,7 @@ class ArchitectureTests(unittest.TestCase):
                         self.assertNotIn(owner.attr, {'native', 'vault', 'store'}, (name, node.func.attr))
 
     def test_application_imports_work_without_loading_qt_or_external_adapters(self):
-        script = ('import sys; import steam_sda.application.accounts; import steam_sda.application.authentication; '
+        script = ('import sys; import steam_sda.application.accounts; import steam_sda.application.authentication; import steam_sda.application.avatars; '
                   'import steam_sda.application.devices; import steam_sda.application.switching; '
                   'assert not any(n.startswith(("PyQt6", "requests", "psutil", "steam_sda.infrastructure")) for n in sys.modules)')
         result = subprocess.run([sys.executable, '-c', script], cwd=ROOT, capture_output=True, timeout=10)

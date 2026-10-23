@@ -22,6 +22,8 @@ from steam_sda.infrastructure.persistence.storage import data_dir
 from steam_sda.application.updates import UpdateService
 from steam_sda.infrastructure.updates.github import GitHubUpdates
 from steam_sda import __version__
+from steam_sda.application.avatars import AvatarService
+from steam_sda.infrastructure.community.avatars import SteamAvatars
 
 
 def prepare_app_data_dir():
@@ -48,6 +50,7 @@ class AppServices:
     enable_devices: bool = True
     updates: UpdateService | None = None
     icon_path: str = ''
+    avatars: AvatarService | None = None
 
     @staticmethod
     def inspect_installation(path):
@@ -85,6 +88,8 @@ def create_services(native=None, store=None, enable_devices=True, discover=True)
                            DesktopToken(), preferences, Preferences(), enable_devices=enable_devices)
     services.updates = UpdateService(store, GitHubUpdates(), __version__)
     services.icon_path = str(resource_path('assets/app.ico'))
+    if isinstance(store, Store):
+        services.avatars = AvatarService(SteamAvatars(store.directory / 'avatars'))
     try:
         services.state = preferences.load()
         if native is None and discover:

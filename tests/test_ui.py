@@ -151,6 +151,81 @@ class UiTests(unittest.TestCase):
         self.win._level_result(self.win.generation - 1, ONE, {"level": 999})
         self.assertEqual(self.win.level.text(), '64')
 
+    def test_level_results_and_unchanged_reload_preserve_rows_selection_and_animation(self):
+        from PyQt6.QtCore import Qt
+        self.app.setProperty('animationsEnabled', True)
+        try:
+            self.win.show()
+            self.app.processEvents()
+            self.win.list.setCurrentRow(1)
+            before = [self.win.list.item(i) for i in range(2)]
+            self.win.list.reveal()
+            self.win.list.reveal_animation.setCurrentTime(120)
+            self.win.list.set_hover_row(1)
+            self.win.list.hover_animation.setCurrentTime(140)
+            with patch.object(self.win.list, 'reveal') as reveal, patch.object(self.win.pages, 'reveal') as page:
+                self.win._level_result(self.win.generation, ONE, {'level': 64})
+                self.win._level_result(self.win.generation, TWO, {'level': 0})
+                self.win.reload_accounts(refresh_levels=False)
+                reveal.assert_not_called()
+                page.assert_not_called()
+            self.assertIs(self.win.list.item(0), before[0])
+            self.assertIs(self.win.list.currentItem(), before[1])
+            self.assertEqual(self.win.selected_id, TWO)
+            self.assertEqual(self.win.list.reveal_animation.currentTime(), 120)
+            self.assertEqual(self.win.list.hover_amount(1), 1)
+            self.assertEqual(before[1].data(Qt.ItemDataRole.UserRole + 1)['level'], 0)
+            self.assertIn('LVL 0', before[1].text())
+        finally:
+            self.app.setProperty('animationsEnabled', False)
+
+    def test_metadata_refresh_preserves_scrolled_position_and_rows_are_compact(self):
+        self.win.account_rows += [{'steam_id': str(int(TWO) + i), 'name': f'Extra {i}', 'login': f'login_{i}', 'remembered': True}
+                                  for i in range(1, 30)]
+        self.win._list()
+        self.win.show()
+        self.app.processEvents()
+        self.win.list.verticalScrollBar().setValue(300)
+        before = self.win.list.item(5)
+        self.win._level_result(self.win.generation, ONE, {'level': 64})
+        self.assertEqual(self.win.list.verticalScrollBar().value(), 300)
+        self.assertIs(self.win.list.item(5), before)
+        self.assertEqual(self.win.list.sizeHintForRow(0), 72)
+
+    def test_avatar_updates_only_its_owner_and_does_not_restart_list_or_header_animation(self):
+        from PyQt6.QtCore import QBuffer, QIODevice
+        from PyQt6.QtGui import QImage
+        image = QImage(64, 64, QImage.Format.Format_ARGB32)
+        image.fill(0xFF5F9BAF)
+        buffer = QBuffer()
+        buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+        image.save(buffer, 'PNG')
+        data = bytes(buffer.data())
+        with patch.object(self.win.list, 'reveal') as reveal, patch.object(self.win.pages, 'reveal') as page:
+            self.win._avatar_result(self.win.generation, ONE, data)
+            self.assertFalse(self.win.avatar.pixmap().isNull())
+            self.assertIn(ONE, self.win.list.avatars)
+            self.win._avatar_result(self.win.generation - 1, TWO, data)
+            self.assertNotIn(TWO, self.win.list.avatars)
+            previous = self.win.list.avatars[ONE].cacheKey()
+            self.win._avatar_result(self.win.generation, ONE, b'<html>not an image</html>')
+            self.assertEqual(self.win.list.avatars[ONE].cacheKey(), previous)
+            reveal.assert_not_called()
+            page.assert_not_called()
+
+    def test_closing_requests_all_background_workers_to_stop_together(self):
+        from unittest.mock import Mock
+        from PyQt6.QtGui import QCloseEvent
+        workers = [Mock(), Mock(), Mock()]
+        self.win.update_worker, self.win.level_worker, self.win.avatar_worker = workers
+        event = QCloseEvent()
+        self.win.closeEvent(event)
+        self.assertFalse(event.isAccepted())
+        for worker in workers:
+            worker.requestInterruption.assert_called_once()
+        self.win.update_worker = self.win.level_worker = self.win.avatar_worker = None
+        self.win._closing = False
+
     def test_level_update_date_renders_with_non_cyrillic_windows_locale(self):
         original = locale.setlocale(locale.LC_ALL)
         try:

@@ -50,6 +50,39 @@ class LevelWorker(QThread):
             self.result.emit(self.generation, steam_id, data)
 
 
+class AvatarWorker(QThread):
+    result = pyqtSignal(int, str, bytes)
+
+    def __init__(self, service, ids, generation, parent=None):
+        super().__init__(parent)
+        self.service, self.ids, self.generation = service, ids, generation
+
+    def run(self):
+        known = {}
+        # Show every cached image before a single slow network request can block it.
+        for sid in self.ids:
+            if self.isInterruptionRequested():
+                return
+            try:
+                data = self.service.cached(sid).get('data', b'')
+                if data:
+                    known[sid] = data
+                    self.result.emit(self.generation, sid, data)
+            except Exception:
+                continue
+        for index, sid in enumerate(self.ids):
+            if self.isInterruptionRequested():
+                return
+            if index:
+                self.msleep(800)
+            try:
+                data = self.service.refresh(sid, self.isInterruptionRequested)
+                if data and data != known.get(sid) and not self.isInterruptionRequested():
+                    self.result.emit(self.generation, sid, data)
+            except Exception:
+                continue
+
+
 class SwitchWorker(QThread):
     progress = pyqtSignal(str)
     result = pyqtSignal(dict)

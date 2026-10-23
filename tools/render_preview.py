@@ -8,7 +8,8 @@ import time
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'tests'))
 from PyQt6.QtWidgets import QApplication
-from PyQt6.QtGui import QFont, QFontDatabase
+from PyQt6.QtGui import QFont, QFontDatabase, QImage, QPainter, QColor, QPolygonF
+from PyQt6.QtCore import QBuffer, QIODevice, QPointF
 from steam_sda.bootstrap import create_services
 from steam_sda.presentation.qt.window import MainWindow
 from test_core import MemoryStore, ONE, TWO
@@ -32,6 +33,17 @@ store.write('levels.json', {ONE: {'level':64,'source':'Steam Community','updated
                             TWO: {'level':23,'source':'Steam Web API','updated_at':time.time()}})
 AccountVault(store).save({**record(TWO, 'second_login'), 'name': 'second account', 'hwid': profile(TWO), 'session_origin': 'steam_temporary'})
 win = MainWindow(create_services(NativeFixture(), store, enable_devices=False), start_services=False)
+for sid, sky, land, sun in ((ONE, '#273357', '#7885b5', '#f0d9a7'), (TWO, '#96beb8', '#3b6c64', '#f0c1a2')):
+    image = QImage(96, 96, QImage.Format.Format_RGB32)
+    image.fill(QColor(sky))
+    painter = QPainter(image)
+    painter.setPen(QColor(sun)); painter.setBrush(QColor(sun)); painter.drawEllipse(57, 14, 22, 22)
+    painter.setPen(QColor(land)); painter.setBrush(QColor(land))
+    painter.drawPolygon(QPolygonF([QPointF(0, 96), QPointF(35, 34), QPointF(74, 96)]))
+    painter.drawPolygon(QPolygonF([QPointF(34, 96), QPointF(74, 45), QPointF(96, 72), QPointF(96, 96)]))
+    painter.end()
+    buffer = QBuffer(); buffer.open(QIODevice.OpenModeFlag.WriteOnly); image.save(buffer, 'PNG')
+    win._avatar_result(win.generation, sid, bytes(buffer.data()))
 win.account_rows[0].update(name='nightshift',login='night_login')
 win.account_rows[1].update(name='second account',login='second_login')
 win._list()

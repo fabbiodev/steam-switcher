@@ -38,6 +38,20 @@ def check_ui(app, report_path):
                    "current_switch_disabled": not win.switch_button.isEnabled(), "dpapi": dpapi}
         summary['application_icon'] = not win.windowIcon().isNull() and not win.brand_icon.pixmap().isNull()
         summary['ok'] &= summary['application_icon']
+        from PyQt6.QtCore import QBuffer, QIODevice, Qt
+        from PyQt6.QtGui import QImage
+        image = QImage(64, 64, QImage.Format.Format_RGB32)
+        image.fill(0xFF5F9BAF)
+        buffer = QBuffer()
+        buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+        image.save(buffer, 'JPEG')
+        first_item = win.list.item(0)
+        win._avatar_result(win.generation, '76561198000000001', bytes(buffer.data()))
+        win._level_result(win.generation, '76561198000000001', {'level': 64})
+        summary['sidebar_profiles'] = (win.list.item(0) is first_item and win.list.sizeHintForRow(0) == 72
+                                       and first_item.data(Qt.ItemDataRole.UserRole + 1)['level'] == 64
+                                       and not win.avatar.pixmap().isNull())
+        summary['ok'] &= summary['sidebar_profiles']
         win.list.setCurrentRow(1)
         summary["other_switch_enabled"] = win.switch_button.isEnabled()
         summary["ok"] &= summary["other_switch_enabled"] and summary["current_switch_disabled"]

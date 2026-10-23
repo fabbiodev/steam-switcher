@@ -15,11 +15,11 @@ from steam_sda.application.sessions import next_due_auth
 from .widgets import label, button, badge, icon_tile, Backdrop, AnimatedLineEdit
 from .icons import icon
 from .motion import TransitionStack
-from .account_list import AnimatedAccountList, avatar_colors
+from .account_list import AnimatedAccountList, avatar_colors, decode_avatar, rounded_avatar
 from PyQt6.QtGui import QShortcut, QKeySequence, QIcon
 from steam_sda import __version__
 from .dialogs import LoginDialog, ArchivePasswordDialog, ExportDialog, SettingsDialog, DeleteAccountDialog
-from .workers import LevelWorker, SwitchWorker, AuthWorker, UpdateWorker
+from .workers import LevelWorker, SwitchWorker, AuthWorker, UpdateWorker, AvatarWorker
 from .update_dialog import UpdateDialog
 
 
@@ -38,6 +38,9 @@ class MainWindow(QMainWindow):
         self.level_worker = self.switch_worker = None
         self.auth_worker = None
         self.update_worker = None
+        self.avatar_worker = None
+        self._pending_avatars = False
+        self._list_query = None
         self.available_update = None
         self._update_result = {}
         self._update_dialog_open = False
@@ -320,6 +323,8 @@ class MainWindow(QMainWindow):
         self.generation += 1
         if self.level_worker:
             self.level_worker.requestInterruption()
+        if self.avatar_worker:
+            self.avatar_worker.requestInterruption()
         try:
             self.account_rows, self.managed = self.accounts.catalog()
             self.managed = self.accounts.bind_discovered(self.account_rows)
@@ -328,40 +333,60 @@ class MainWindow(QMainWindow):
         except (SteamError, OSError) as exc:
             self.message(str(exc) if isinstance(exc, SteamError) else "Не удалось прочитать список Steam.", True)
         self._list()
+        ids = {row['steam_id'] for row in self.account_rows}
+        self.list.avatars = {sid: image for sid, image in self.list.avatars.items() if sid in ids}
+        if self._start_services:
+            self.refresh_avatars()
         if refresh_levels and self._start_services:
             self.refresh_levels()
 
     def _list(self):
         query = self.search.text().strip().casefold()
         rows = [a for a in self.account_rows if all(term in " ".join((a["name"], a["login"], a["steam_id"])).casefold() for term in query.split())]
+        previous_ids = [self.list.item(i).data(Qt.ItemDataRole.UserRole) for i in range(self.list.count())]
+        changed = previous_ids != [a['steam_id'] for a in rows]
+        previous_scroll = self.list.verticalScrollBar().value()
         self.list.blockSignals(True)
-        self.list.clear()
+        if changed:
+            self.list.clear()
         selected = None
-        for account in rows:
+        for index, account in enumerate(rows):
             state, portable, temporary = session_status(account, self.managed.get(account['steam_id'], {}), account['steam_id'] == self._active)
             account.update(session_label=state, session_saved=portable, temporary_session=temporary)
             level = self.levels.get(account["steam_id"], {}).get("level")
-            text = account["name"] + (f"  ·  {level}" if level is not None else "")
+            text = account['name'] + f" · LVL {level if level is not None else '—'}"
             text += "\n" + account["login"] + (" · открыт" if self._active == account["steam_id"] else "")
-            item = QListWidgetItem(text)
-            item.setData(Qt.ItemDataRole.UserRole, account["steam_id"])
-            item.setData(Qt.ItemDataRole.UserRole + 1, {**account, 'active': self._active == account['steam_id'], 'level': level})
-            item.setToolTip(account["steam_id"])
-            self.list.addItem(item)
+            item = QListWidgetItem(text) if changed else self.list.item(index)
+            if changed:
+                item.setData(Qt.ItemDataRole.UserRole, account['steam_id'])
+                self.list.addItem(item)
+            elif item.text() != text:
+                item.setText(text)
+            data = {**account, 'active': self._active == account['steam_id'], 'level': level}
+            if item.data(Qt.ItemDataRole.UserRole + 1) != data:
+                item.setData(Qt.ItemDataRole.UserRole + 1, data)
+            item.setToolTip(f"{account['login']} · {account['steam_id']}\n{state}\nLVL {level if level is not None else '—'}")
             if account["steam_id"] == self.selected_id:
                 selected = item
         if selected is None and self.list.count():
             selected = next((self.list.item(i) for i in range(self.list.count()) if self.list.item(i).data(Qt.ItemDataRole.UserRole) == self._active), self.list.item(0))
-        self.list.setCurrentItem(selected)
+        if changed or self.list.currentItem() is not selected:
+            self.list.setCurrentItem(selected)
+            if query == self._list_query and selected and selected.data(Qt.ItemDataRole.UserRole) == self.selected_id:
+                self.list.verticalScrollBar().setValue(previous_scroll)
         self.selected_id = selected.data(Qt.ItemDataRole.UserRole) if selected else None
         self.list.blockSignals(False)
         self.count.setText(f"Аккаунты · {len(rows)} / {len(self.account_rows)}" if query else f"Аккаунты · {len(rows)}")
-        self.list.reveal()
+        if changed:
+            self.list.reveal()
+        self._list_query = query
         self.render()
 
     def _select(self, item, previous):
-        self.pages.reveal()
-        self.selected_id = item.data(Qt.ItemDataRole.UserRole) if item else None
+        selected = item.data(Qt.ItemDataRole.UserRole) if item else None
+        if selected != self.selected_id:
+            self.pages.reveal()
+        self.selected_id = selected
         self.render()
 
     def render(self):
@@ -373,6 +398,9 @@ class MainWindow(QMainWindow):
         self.avatar.setText((account['name'][:2].upper() if account else '—'))
         bg, fg = avatar_colors(self.selected_id or '')
         self.avatar.setStyleSheet(f'background: {bg}; color: {fg}; border-radius: 20px; font-size: 24px; font-weight: 600;')
+        image = self.list.avatars.get(self.selected_id)
+        if image is not None:
+            self.avatar.setPixmap(rounded_avatar(image))
         data = self.levels.get(self.selected_id, {})
         self.level.setText(str(data["level"]) if "level" in data else "—")
         updated = data.get("updated_at")
@@ -508,6 +536,42 @@ class MainWindow(QMainWindow):
             self._pending_levels = False
             self._pending_force = False
             QTimer.singleShot(0, lambda: self.refresh_levels(force=force))
+
+    def refresh_avatars(self):
+        if self._closing or not self.services.avatars:
+            return
+        if self.avatar_worker:
+            self._pending_avatars = True
+            return
+        ids = [a['steam_id'] for a in self.account_rows]
+        if not ids:
+            return
+        self._pending_avatars = False
+        worker = AvatarWorker(self.services.avatars, ids, self.generation, self)
+        self.avatar_worker = worker
+        worker.result.connect(self._avatar_result)
+        worker.finished.connect(self._avatars_finished)
+        worker.finished.connect(worker.deleteLater)
+        worker.start()
+
+    def _avatar_result(self, generation, sid, data):
+        if generation != self.generation or self._closing or sid not in {a['steam_id'] for a in self.account_rows}:
+            return
+        pixmap = decode_avatar(data)
+        if pixmap.isNull():
+            return
+        self.list.avatars[sid] = pixmap
+        self.list.viewport().update()
+        if sid == self.selected_id:
+            self.render()
+
+    def _avatars_finished(self):
+        self.avatar_worker = None
+        if self._closing:
+            QTimer.singleShot(0, self.close)
+        elif self._pending_avatars:
+            self._pending_avatars = False
+            QTimer.singleShot(0, self.refresh_avatars)
 
     def _begin_switch(self, steam_id=None):
         if not self.switcher or self.switch_worker or self.auth_worker:
@@ -804,15 +868,12 @@ class MainWindow(QMainWindow):
             self.message("Дождитесь завершения операции Steam, затем закройте приложение.")
             event.ignore()
             return
-        if self.update_worker:
+        readers = [worker for worker in (self.update_worker, self.level_worker, self.avatar_worker) if worker is not None]
+        if readers:
             self._closing = True
-            self.update_worker.requestInterruption()
-            event.ignore()
-            return
-        if self.level_worker:
-            self._closing = True
-            self.level_worker.requestInterruption()
-            self.message("Завершаю текущий запрос Steam…")
+            for worker in readers:
+                worker.requestInterruption()
+            self.message('Завершаю фоновые запросы…')
             event.ignore()
             return
         self.timer.stop()
