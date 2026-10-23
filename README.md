@@ -5,7 +5,7 @@
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 
 Приложение Windows для просмотра уровня Steam, переключения аккаунтов и автоматического
-восстановления входа через SteamKit2 3.4.0. Текущая версия — 0.7.5.
+восстановления входа через SteamKit2 3.4.0. Текущая версия — 0.7.6.
 
 В интерфейсе приложение называется **Steam SDA**.
 
@@ -14,10 +14,10 @@
 ## Скачать
 
 Откройте [Releases](https://github.com/fabbiodev/steam-switcher/releases/latest),
-скачайте `SteamSwitcher-v0.7.5-Setup-x64.exe` и запустите установщик.
+скачайте `SteamSwitcher-v0.7.6-Setup-x64.exe` и запустите установщик.
 При обновлении он сам определяет папку зарегистрированной установки, включая
 выбранную пользователем. Для готовой сборки Python и .NET устанавливать не нужно.
-Переносимый вариант — `SteamSwitcher-v0.7.5-win-x64.zip`: распакуйте всю папку
+Переносимый вариант — `SteamSwitcher-v0.7.6-win-x64.zip`: распакуйте всю папку
 и запустите `SteamSDA.exe`. Контрольные суммы обоих файлов — в `SHA256SUMS.txt`.
 
 Кнопка «Обновления» в приложении проверяет новые выпуски и позволяет скачать
@@ -245,7 +245,7 @@ python main.py --check-ui ui-check.json
 python -m pip install -r requirements-build.txt
 python tools/build.py
 python -m unittest discover -s tests -v
-python tools/package_release.py --tag v0.7.5
+python tools/package_release.py --tag v0.7.6
 python tools/build_installer.py
 ```
 
@@ -279,7 +279,7 @@ SteamSwitcher/
 остаются в `%APPDATA%\SteamSDA`; повторный импорт при обновлении не требуется.
 
 ```powershell
-python tools/verify_distribution.py --archive build/release/SteamSwitcher-v0.7.5-win-x64.zip
+python tools/verify_distribution.py --archive build/release/SteamSwitcher-v0.7.6-win-x64.zip
 ```
 
 Эта проверка распаковывает архив во временную папку и запускает EXE из постороннего

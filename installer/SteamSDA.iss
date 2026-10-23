@@ -66,22 +66,20 @@ Filename: "{app}\SteamSDA.exe"; Flags: nowait runasoriginaluser; Check: Relaunch
 
 [Code]
 function OpenForUpdate(FileName: String; Access, Share: Cardinal;
-  Security: NativeInt; Disposition, Attributes: Cardinal; Template: THandle): THandle;
+  Security: INT_PTR; Disposition, Attributes: Cardinal; Template: INT_PTR): INT_PTR;
   external 'CreateFileW@kernel32.dll stdcall';
-function CloseUpdateHandle(Handle: THandle): Boolean;
+function CloseUpdateHandle(Handle: INT_PTR): BOOL;
   external 'CloseHandle@kernel32.dll stdcall';
-function UpdateLastError: Cardinal;
-  external 'GetLastError@kernel32.dll stdcall';
 
 function WriteError(const FileName: String): Cardinal;
 var
-  Handle: THandle;
+  Handle: INT_PTR;
 begin
   Result := 0;
   // OPEN_EXISTING + GENERIC_WRITE, share read/write/delete. Never write bytes.
   Handle := OpenForUpdate(FileName, $40000000, 7, 0, 3, 0, 0);
-  if Handle = THandle(-1) then
-    Result := UpdateLastError
+  if Handle = -1 then
+    Result := DllGetLastError
   else
     CloseUpdateHandle(Handle);
   if (Result = 2) or (Result = 3) then Result := 0;
