@@ -2,6 +2,8 @@ import hashlib
 import json
 from pathlib import Path
 import tempfile
+import subprocess
+import sys
 import unittest
 from unittest.mock import Mock, patch
 import requests
@@ -43,6 +45,22 @@ def session_for(data, url=None):
 
 
 class UpdateTests(unittest.TestCase):
+    def test_public_feed_import_does_not_require_process_inspection_dependency(self):
+        script = '''
+import builtins
+original = builtins.__import__
+def restricted(name, *args, **kwargs):
+    if name == 'psutil' or name.startswith('psutil.'):
+        raise ModuleNotFoundError('psutil deliberately unavailable in feed-check environment')
+    return original(name, *args, **kwargs)
+builtins.__import__ = restricted
+from steam_sda.infrastructure.updates.github import GitHubUpdates
+assert 'psutil' not in __import__('sys').modules
+'''
+        result = subprocess.run([sys.executable, '-c', script],
+                                cwd=Path(__file__).resolve().parents[1], capture_output=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stderr.decode(errors='replace'))
+
     def test_only_newer_stable_release_and_exact_installer_are_accepted(self):
         self.assertEqual(release_from_github(metadata(), '0.7.2'), release())
         self.assertIsNone(release_from_github(metadata(), '0.7.3'))

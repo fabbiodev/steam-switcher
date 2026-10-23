@@ -4,8 +4,6 @@ from ctypes import wintypes
 import os
 from pathlib import Path
 
-import psutil
-
 from steam_sda.domain.errors import SteamError
 
 
@@ -26,6 +24,8 @@ def write_error(path):
 
 def module_users(path):
     """Best-effort names only; inaccessible processes must not hide a lock."""
+    import psutil
+
     target = os.path.normcase(os.path.abspath(path))
     names = set()
     for process in psutil.process_iter(['name']):
