@@ -45,6 +45,10 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
+[CustomMessages]
+russian.UpdateFileBlocked=Обновление остановлено до замены файлов. Не удалось получить доступ к файлу:%n%1%n%nЗакройте Steam SDA, Steam или другую использующую файл программу и повторите установку. Если ошибка повторяется, проверьте права на папку установки. Код Windows: %2.
+english.UpdateFileBlocked=Update stopped before replacing files. Cannot access:%n%1%n%nClose Steam SDA, Steam or another application using this file, then retry. If this persists, check installation folder permissions. Windows error: %2.
+
 [Files]
 Source: "{#AppSource}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
@@ -61,6 +65,72 @@ Filename: "{app}\SteamSDA.exe"; Description: "{cm:LaunchProgram,Steam SDA}"; Fla
 Filename: "{app}\SteamSDA.exe"; Flags: nowait runasoriginaluser; Check: RelaunchAfterUpdate
 
 [Code]
+function OpenForUpdate(FileName: String; Access, Share: Cardinal;
+  Security: NativeInt; Disposition, Attributes: Cardinal; Template: THandle): THandle;
+  external 'CreateFileW@kernel32.dll stdcall';
+function CloseUpdateHandle(Handle: THandle): Boolean;
+  external 'CloseHandle@kernel32.dll stdcall';
+function UpdateLastError: Cardinal;
+  external 'GetLastError@kernel32.dll stdcall';
+
+function WriteError(const FileName: String): Cardinal;
+var
+  Handle: THandle;
+begin
+  Result := 0;
+  // OPEN_EXISTING + GENERIC_WRITE, share read/write/delete. Never write bytes.
+  Handle := OpenForUpdate(FileName, $40000000, 7, 0, 3, 0, 0);
+  if Handle = THandle(-1) then
+    Result := UpdateLastError
+  else
+    CloseUpdateHandle(Handle);
+  if (Result = 2) or (Result = 3) then Result := 0;
+end;
+
+function CheckUpdateFiles(const Directory: String): String;
+var
+  Entry: TFindRec;
+  FileName: String;
+  Error: Cardinal;
+begin
+  Result := '';
+  if not FindFirst(AddBackslash(Directory) + '*', Entry) then Exit;
+  try
+    repeat
+      if (Entry.Name <> '.') and (Entry.Name <> '..') then begin
+        FileName := AddBackslash(Directory) + Entry.Name;
+        // Do not follow junctions into another installation or data directory.
+        if (Entry.Attributes and $400) <> 0 then begin
+          Result := FmtMessage(CustomMessage('UpdateFileBlocked'), [FileName, '4390']);
+        end else if (Entry.Attributes and FILE_ATTRIBUTE_DIRECTORY) <> 0 then
+          Result := CheckUpdateFiles(FileName)
+        else begin
+          Error := WriteError(FileName);
+          if Error <> 0 then
+            Result := FmtMessage(CustomMessage('UpdateFileBlocked'), [FileName, IntToStr(Error)]);
+        end;
+        if Result <> '' then Exit;
+      end;
+    until not FindNext(Entry);
+  finally
+    FindClose(Entry);
+  end;
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  Attempt: Integer;
+begin
+  // The updater starts Setup just before its own process exits. Allow that exit
+  // to finish before probing the executable and Python/Qt runtime files.
+  for Attempt := 1 to 50 do begin
+    if WriteError(ExpandConstant('{app}\SteamSDA.exe')) = 0 then Break;
+    Sleep(200);
+  end;
+  Result := CheckUpdateFiles(ExpandConstant('{app}'));
+  if Result <> '' then Log(Result);
+end;
+
 function RelaunchAfterUpdate: Boolean;
 begin
   Result := WizardSilent and (ExpandConstant('{param:RELAUNCH|0}') = '1');

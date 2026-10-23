@@ -7,6 +7,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -64,6 +65,38 @@ def verify(installer, report):
         style = destination / 'assets/style.qss'
         expected_style = style.read_bytes()
         style.write_bytes(expected_style + b'\n/* installer replacement fixture */\n')
+        # A separate synthetic process retains the installed DLL exactly as a
+        # client would. DllMain only disables thread callbacks; no exports run.
+        ready = workspace / 'dll-loaded'
+        loader = subprocess.Popen([sys.executable, '-c',
+            'import ctypes, pathlib, sys; module = ctypes.WinDLL(sys.argv[1]); '
+            'pathlib.Path(sys.argv[2]).touch(); sys.stdin.buffer.read(1)',
+            str(destination / 'integrations/device/SteamSDADevice.dll'), str(ready)],
+            stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        try:
+            deadline = time.monotonic() + 15
+            while not ready.exists() and loader.poll() is None and time.monotonic() < deadline:
+                time.sleep(.05)
+            if not ready.exists():
+                raise RuntimeError('Synthetic DLL holder did not start.')
+            before = style.read_bytes()
+            blocked_log = workspace / 'blocked-upgrade.log'
+            blocked = subprocess.run([str(installer), *flags, f'/LOG={blocked_log}'],
+                                     timeout=180, capture_output=True,
+                                     creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+            # PrepareToInstall refusal without a requested reboot uses exit 7.
+            if blocked.returncode != 7 or style.read_bytes() != before:
+                raise RuntimeError('Locked DLL did not stop the installer before file replacement.')
+            if 'SteamSDADevice.dll' not in blocked_log.read_text(encoding='utf-8-sig', errors='replace'):
+                raise RuntimeError('Installer did not identify the occupied DLL.')
+        finally:
+            if loader.poll() is None:
+                try:
+                    loader.communicate(b'\n', timeout=15)
+                except subprocess.TimeoutExpired:
+                    loader.kill()  # Only this verification's synthetic child.
+                    loader.communicate(timeout=5)
         # No /DIR on the next run: Inno must use its previous installation record.
         run(installer, [*flags, f'/LOG={workspace / "upgrade.log"}'])
         if Path(registration()['InstallLocation']).resolve() != destination or style.read_bytes() != expected_style:
@@ -87,6 +120,7 @@ def verify(installer, report):
         summary = {'ok': True, 'app_version': __version__, 'custom_directory': True,
                    'previous_directory_detected': True, 'application_detects_installation': True,
                    'files_replaced': True, 'no_duplicate_installation': True,
+                   'loaded_dll_blocks_before_replacement': True, 'retry_after_dll_release': True,
                    'installed_exe': ui['ok'], 'uninstall': True, 'app_data_preserved': True}
         Path(report).parent.mkdir(parents=True, exist_ok=True)
         Path(report).write_text(json.dumps(summary, indent=2), encoding='utf-8')

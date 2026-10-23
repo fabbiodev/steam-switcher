@@ -30,7 +30,8 @@ class UpdateDialog(QDialog):
         box.addWidget(self.automatic)
         note = label('Проверка выполняется в фоне не чаще раза в сутки. '
                      'Установщик проверяется по SHA-256. При установке Steam SDA закроется '
-                     'и откроется после обновления; аккаунты сохранятся.', 'muted')
+                     'и откроется после обновления; аккаунты сохранятся. '
+                     'Перед установкой закройте Steam, чтобы освободить DLL Steam SDA.', 'muted')
         note.setWordWrap(True)
         box.addWidget(note)
         self.progress = QProgressBar()

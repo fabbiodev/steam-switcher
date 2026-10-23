@@ -11,6 +11,7 @@ import requests
 from steam_sda.domain.errors import SteamError
 from steam_sda.domain.updates import REPOSITORY, release_from_github
 from steam_sda.infrastructure.ipc.processes import start_external
+from steam_sda.infrastructure.updates.locks import ensure_device_available
 
 UNINSTALL_KEY = r'Software\Microsoft\Windows\CurrentVersion\Uninstall\SteamSDA.Desktop_is1'
 
@@ -126,6 +127,7 @@ class GitHubUpdates:
             if Path(path).resolve() != target.resolve() or not self._verified(target, release):
                 raise SteamError('Проверка установщика перед запуском не пройдена. Скачайте обновление заново.')
             destination = installation_directory()
+            ensure_device_available(destination)
             env = {key: value for key, value in os.environ.items() if not key.startswith('_PYI_') and key != '_MEIPASS2'}
             env['PYINSTALLER_RESET_ENVIRONMENT'] = '1'
             self.launcher([str(target), '/SILENT', '/SP-', '/NORESTART', '/NOCLOSEAPPLICATIONS',

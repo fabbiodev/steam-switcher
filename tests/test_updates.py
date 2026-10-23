@@ -143,6 +143,24 @@ class UpdateTests(unittest.TestCase):
             with self.assertRaises(SteamError): gateway.install(release(), path)
             launcher.assert_not_called()
 
+    def test_locked_device_stops_update_before_installer_launch_and_allows_retry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            launcher = Mock()
+            gateway = GitHubUpdates(directory, lambda: session_for(PAYLOAD), launcher)
+            path = gateway.download(release())
+            destination = Path(directory) / 'installed'
+            with patch('steam_sda.infrastructure.updates.github.installation_directory', return_value=destination), \
+                 patch('steam_sda.infrastructure.updates.github.ensure_device_available',
+                       side_effect=SteamError('SteamSDADevice.dll занят: закройте steam.exe')) as check:
+                with self.assertRaisesRegex(SteamError, 'SteamSDADevice.dll'):
+                    gateway.install(release(), path)
+                launcher.assert_not_called()
+                self.assertTrue(Path(path).is_file())
+                check.side_effect = None
+                gateway.install(release(), path)
+                self.assertEqual(check.call_count, 2)
+                launcher.assert_called_once()
+
     @unittest.skipUnless(__import__('os').name == 'nt', 'Windows registry discovery')
     def test_registered_installation_wins_over_portable_copy_and_stale_registration_falls_back(self):
         import winreg
